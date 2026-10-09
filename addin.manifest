@@ -1,0 +1,7 @@
+# This addin, for the shared installer in mpc-vst-plugins (tools/release/addin; the keys are in its docs/ADDINS.md).
+ADDIN_ID=skipback
+ADDIN_NAME="MPC Skipback"
+ADDIN_SO=libmpc_skipback.so
+ADDIN_CONF=skipback.conf
+ADDIN_FILES=""
+ADDIN_DONE="MPC Skipback records main out all the time. Touch /tmp/mpc-addin-skipback.trigger (a button remap can) to save the last 30 s as a WAV; /tmp/mpc-addin-skipback.done then says where. Settings and skipback.log are in this folder."

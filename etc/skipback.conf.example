@@ -1,0 +1,35 @@
+# MPC Skipback settings. Read when MPC starts.
+
+# 0 leaves the library loaded but idle.
+enabled=1
+
+# Seconds of main out saved by each trigger, 1..60. Memory is only used as audio arrives
+# (30 s is about 10 MB).
+window_sec=30
+
+# Where the WAVs go. "auto": /sdcard/Force Documents/Samples/Skipback when /sdcard/Force Documents
+# exists, else /sdcard/Skipback.
+output_dir=auto
+
+# A save starts when this file appears; the addin deletes it. Touch it from anything: a button
+# remap, a script, a plugin.
+trigger=/tmp/mpc-addin-skipback.trigger
+
+# Written after every save: "ok <path of the WAV>" or "error <reason>". Wait for it to change
+# (or appear) to know the save finished.
+done=/tmp/mpc-addin-skipback.done
+
+# 1 mixes a short click into main out when a save has finished. It is not recorded.
+click=0
+
+# The channels of MPC's playback stream that carry main out (0-based), and the codec's ALSA card
+# (auto: the one /dev/snd/by-path/platform-sound points at).
+left=0
+right=1
+tap_card=auto
+
+# How often the trigger file is looked for, ms.
+poll_ms=100
+
+# "auto": skipback.log in this folder. An absolute path, or empty for no log.
+log=auto
