@@ -103,6 +103,35 @@ int main(void) {
   int32_t mx = 0; for (uint32_t i = 0; i < cf; i++) { int32_t s = sb_click_sample(i, 44100); if (s > mx) mx = s; }
   CHECK(mx > 100000000 && mx < 300000000); CHECK_EQ(sb_click_sample(0, 44100), 0); CHECK_EQ(sb_click_sample(cf, 44100), 0);
 
+  /* controller MIDI: double press of button 93 */
+  {
+    sb_btn bt; sb_btn_init(&bt, 93, 350);
+    const uint8_t press[] = { 0x90, 93, 0x7f, 0x90, 93, 0x00 };
+    CHECK_EQ(sb_btn_feed(&bt, press, sizeof press, 1000), 0);
+    CHECK_EQ(sb_btn_feed(&bt, press, sizeof press, 1200), 1);          /* second press 200 ms later */
+    CHECK_EQ(sb_btn_feed(&bt, press, sizeof press, 1300), 0);          /* a third press starts over */
+    CHECK_EQ(sb_btn_feed(&bt, press, sizeof press, 2000), 0);          /* too slow */
+    CHECK_EQ(sb_btn_feed(&bt, press, sizeof press, 2100), 1);
+    const uint8_t other[] = { 0x90, 92, 0x7f, 0x90, 92, 0x7f };
+    CHECK_EQ(sb_btn_feed(&bt, other, sizeof other, 3000), 0);          /* another button */
+    /* one byte at a time, running status, realtime and a SysEx in between */
+    const uint8_t odd[] = { 0xF0, 1, 2, 3, 0xF7, 0x90, 93, 0x7f, 0xF8, 93, 0x7f, 0xB0, 5, 6 };
+    sb_btn_init(&bt, 93, 350);
+    int n = 0; for (size_t i = 0; i < sizeof odd; i++) n += sb_btn_feed(&bt, odd + i, 1, 5000 + (long long)i);
+    CHECK_EQ(n, 1);
+    const uint8_t vel0[] = { 0x90, 93, 0, 0x90, 93, 0, 0x80, 93, 64, 0x91, 93, 0x7f, 0x91, 93, 0x7f };
+    sb_btn_init(&bt, 93, 350);
+    CHECK_EQ(sb_btn_feed(&bt, vel0, sizeof vel0, 9000), 0);            /* releases and other channels don't count */
+    sb_led lv; sb_led_init(&lv);
+    const uint8_t cc[] = { 0xB0, 93, 3, 0xB0, 93, 3, 0xB0, 91, 1, 0xB1, 92, 5, 0xC0, 7 };
+    CHECK_EQ(sb_led_feed(&lv, cc, sizeof cc), 2);
+    CHECK_EQ(lv.val[93], 3); CHECK_EQ(lv.val[91], 1); CHECK_EQ(lv.val[92], 0);
+    CHECK_EQ(sb_led_feed(&lv, cc, 3), 0);
+    const uint8_t off[] = { 93, 0 };                                    /* running status */
+    CHECK_EQ(sb_led_feed(&lv, off, sizeof off), 1); CHECK_EQ(lv.val[93], 0); CHECK_EQ(lv.changed_btn, 93);
+    sb_cfg c2; sb_cfg_defaults(&c2); CHECK_EQ(c2.button, 93); CHECK_EQ(c2.led_button, -1);
+  }
+
   snprintf(p, sizeof p, "rm -rf %s", dir); if (system(p)) {}
   T_DONE("core");
 }

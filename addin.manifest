@@ -4,4 +4,4 @@ ADDIN_NAME="MPC Skipback"
 ADDIN_SO=libmpc_skipback.so
 ADDIN_CONF=skipback.conf
 ADDIN_FILES=""
-ADDIN_DONE="MPC Skipback records main out all the time. Touch /tmp/mpc-addin-skipback.trigger (a button remap can) to save the last 30 s as a WAV; /tmp/mpc-addin-skipback.done then says where. Settings and skipback.log are in this folder."
+ADDIN_DONE="MPC Skipback records main out all the time. Press Rec Arm twice (Force) or touch /tmp/mpc-addin-skipback.trigger to save the last 30 s as a WAV; the LED blinks when it is saved and /tmp/mpc-addin-skipback.done says where. Settings and skipback.log are in this folder."

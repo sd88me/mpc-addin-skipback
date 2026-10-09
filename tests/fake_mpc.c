@@ -9,6 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include "t.h"
 
 typedef struct { int fmt; unsigned ch, rate; int access; } params_t;
@@ -17,6 +18,14 @@ int snd_pcm_close(void *);
 int snd_pcm_hw_params(void *, void *);
 long snd_pcm_writei(void *, const void *, unsigned long);
 extern long fake_accept;
+extern int fake_rm_private;
+extern unsigned char fake_rm_out[256];
+extern volatile size_t fake_rm_out_n;
+void fake_rm_feed(const unsigned char *, size_t);
+int snd_rawmidi_open(void **, void **, const char *, int);
+int snd_rawmidi_close(void *);
+ssize_t snd_rawmidi_read(void *, void *, size_t);
+ssize_t snd_rawmidi_write(void *, const void *, size_t);
 const int32_t *fake_last_written(void);
 
 static const char *dir;
@@ -104,6 +113,36 @@ int main(int argc, char **argv) {
     CHECK(heard);
     snprintf(path, sizeof path, "%s", body + 3); path[strcspn(path, "\n")] = 0;
     CHECK(strstr(path, outdir) == path);
+  }
+  char bflag[400]; snprintf(bflag, sizeof bflag, "%s/btn-on", dir);
+  if (access(bflag, F_OK) == 0) {
+    void *in, *out, *oin, *oout;
+    fake_rm_private = 0; CHECK_EQ(snd_rawmidi_open(&oin, &oout, "hw:9,0", 0), 0);
+    fake_rm_private = 1; CHECK_EQ(snd_rawmidi_open(&in, &out, "hw:1,0", 0), 0);
+    /* MPC lights the Rec Arm LED (CC ch1, controller 93, value 3) */
+    const unsigned char led_on[] = { 0xB0, 93, 3 };
+    CHECK_EQ(snd_rawmidi_write(out, led_on, 3), 3);
+    const unsigned char two[] = { 0x90, 93, 0x7f, 0x90, 93, 0x00, 0x90, 93, 0x7f, 0x90, 93, 0x00 };
+    unsigned char got[32];
+    unlink(done);
+    /* a double press on an unrelated port does nothing */
+    fake_rm_feed(two, sizeof two); CHECK_EQ(snd_rawmidi_read(oin, got, sizeof got), (ssize_t)sizeof two);
+    usleep(400000); CHECK(access(done, F_OK) != 0);
+    /* on the controller port the bytes come through unchanged and the second press starts a save */
+    fake_rm_feed(two, sizeof two); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), (ssize_t)sizeof two);
+    CHECK(!memcmp(got, two, sizeof two));
+    CHECK_EQ(wait_done(body, sizeof body), 0); CHECK(!strncmp(body, "ok ", 3));
+    for (int i = 0; i < 100 && fake_rm_out_n < 3 + 6 * 3 + 3; i++) usleep(20000);
+    CHECK_EQ(fake_rm_out_n, 3 + 6 * 3 + 3);                    /* MPC's write, 3 blinks (on, off), then the real state back */
+    if (fake_rm_out_n == 24) {
+      for (int k = 0; k < 3; k++) { CHECK(!memcmp(fake_rm_out + 3 + k * 6, "\xB0\x5D\x03", 3)); CHECK(!memcmp(fake_rm_out + 6 + k * 6, "\xB0\x5D\x00", 3)); }
+      CHECK(!memcmp(fake_rm_out + 21, "\xB0\x5D\x03", 3));
+    }
+    /* one press, or two slow ones, don't */
+    unlink(done); fake_rm_feed(two, 6); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), 6);
+    usleep(600000); fake_rm_feed(two + 6, 6); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), 6);
+    usleep(400000); CHECK(access(done, F_OK) != 0);
+    snd_rawmidi_close(in); snd_rawmidi_close(out); snd_rawmidi_close(oin); snd_rawmidi_close(oout);
   }
   CHECK_EQ(snd_pcm_close(pcm), 0);
   T_DONE("addin in MPC");

@@ -2,7 +2,9 @@
  *
  *   1. hooks snd_pcm_open / hw_params / close to find MPC's playback stream on the codec card;
  *   2. hooks snd_pcm_writei / writen to copy main out (two channels of that stream) into a rolling buffer;
- *   3. a thread watches for the trigger file and saves the last window_sec seconds as a 24-bit WAV, then writes
+ *   3. hooks snd_rawmidi_open/read/write/close on the controller's "Private" port: a double press of `button`
+ *      (default Rec Arm) starts a save, and the same port takes the LED change that says it has finished;
+ *   4. a thread watches for the trigger file (or the button) and saves the last window_sec seconds as a 24-bit WAV, then writes
  *      the done file (and, if enabled, mixes a short click into main out).
  *
  * Nothing runs unless the process is MPC. The audio thread only copies samples and never locks, allocates or
@@ -19,6 +21,7 @@
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdatomic.h>
+#include <sys/types.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,6 +39,9 @@ typedef struct _snd_pcm_info snd_pcm_info_t;
 typedef unsigned long snd_pcm_uframes_t;
 typedef long snd_pcm_sframes_t;
 
+typedef struct _snd_rawmidi snd_rawmidi_t;
+typedef struct _snd_rawmidi_info snd_rawmidi_info_t;
+
 enum { PCM_PLAYBACK = 0, ACCESS_RW_INTERLEAVED = 3, ACCESS_RW_NONINTERLEAVED = 4, MAX_CH = 32 };
 
 static int (*real_open)(snd_pcm_t **, const char *, int, int);
@@ -43,6 +49,10 @@ static int (*real_close)(snd_pcm_t *);
 static int (*real_hw_params)(snd_pcm_t *, snd_pcm_hw_params_t *);
 static snd_pcm_sframes_t (*real_writei)(snd_pcm_t *, const void *, snd_pcm_uframes_t);
 static snd_pcm_sframes_t (*real_writen)(snd_pcm_t *, void **, snd_pcm_uframes_t);
+static int (*real_rm_open)(snd_rawmidi_t **, snd_rawmidi_t **, const char *, int);
+static int (*real_rm_close)(snd_rawmidi_t *);
+static ssize_t (*real_rm_read)(snd_rawmidi_t *, void *, size_t);
+static ssize_t (*real_rm_write)(snd_rawmidi_t *, const void *, size_t);
 static size_t (*a_info_sizeof)(void);
 static int (*a_info)(snd_pcm_t *, snd_pcm_info_t *);
 static int (*a_info_get_card)(const snd_pcm_info_t *);
@@ -62,11 +72,16 @@ static struct {
   unsigned ch, rate;
   int interleaved;
   sb_buf buf;
+  _Atomic(snd_rawmidi_t *) rm_in, rm_out;   /* the controller's Private port, once MPC has opened it */
+  sb_btn btn;                         /* read hook only (MPC's MIDI input thread) */
+  sb_led led;                         /* guarded by wr_lock */
+  pthread_mutex_t wr_lock;
+  _Atomic int btn_req;                /* the button asked for a save */
   _Atomic uint32_t click_pos;         /* frames of click still to mix, counted up; 0 = idle */
   _Atomic int click_req;
   pthread_once_t once;
   int log_fd;
-} G = { .once = PTHREAD_ONCE_INIT, .log_fd = -1 };
+} G = { .once = PTHREAD_ONCE_INIT, .log_fd = -1, .wr_lock = PTHREAD_MUTEX_INITIALIZER };
 
 /* ---- log ------------------------------------------------------------------------------------- */
 
@@ -98,6 +113,10 @@ static void resolve_reals(void) {
   *(void **)&real_hw_params = dlsym(RTLD_NEXT, "snd_pcm_hw_params");
   *(void **)&real_writei = dlsym(RTLD_NEXT, "snd_pcm_writei");
   *(void **)&real_writen = dlsym(RTLD_NEXT, "snd_pcm_writen");
+  *(void **)&real_rm_open = dlsym(RTLD_NEXT, "snd_rawmidi_open");
+  *(void **)&real_rm_close = dlsym(RTLD_NEXT, "snd_rawmidi_close");
+  *(void **)&real_rm_read = dlsym(RTLD_NEXT, "snd_rawmidi_read");
+  *(void **)&real_rm_write = dlsym(RTLD_NEXT, "snd_rawmidi_write");
   *(void **)&a_info_sizeof = dlsym(RTLD_NEXT, "snd_pcm_info_sizeof");
   *(void **)&a_info = dlsym(RTLD_NEXT, "snd_pcm_info");
   *(void **)&a_info_get_card = dlsym(RTLD_NEXT, "snd_pcm_info_get_card");
@@ -164,8 +183,11 @@ __attribute__((constructor)) static void sb_ctor(void) {
   if (!G.cfg.enabled) { logf_("disabled in settings"); return; }
   if (G.cfg.left == G.cfg.right) { logf_("left and right are the same channel; disabled"); return; }
   G.card = resolve_card();
+  sb_btn_init(&G.btn, G.cfg.button, G.cfg.double_ms);
+  sb_led_init(&G.led);
   G.active = 1;
-  logf_("active: codec card %d, window %u s, channels %u/%u", G.card, G.cfg.window_sec, G.cfg.left, G.cfg.right);
+  logf_("active: codec card %d, window %u s, channels %u/%u, button %u (double within %u ms), led %s",
+        G.card, G.cfg.window_sec, G.cfg.left, G.cfg.right, G.cfg.button, G.cfg.double_ms, G.cfg.led ? "on" : "off");
 }
 
 /* ---- save thread ----------------------------------------------------------------------------- */
@@ -182,11 +204,11 @@ static void write_done(const char *status, const char *detail) {
   if (rename(tmp, G.cfg.done) != 0) unlink(tmp);
 }
 
-static void save_now(void) {
+static int save_now(void) {
   unsigned rate = G.rate;
   uint32_t want = G.cfg.window_sec * rate;
   int32_t *snap = rate ? malloc((size_t)want * 2 * sizeof(int32_t)) : NULL;
-  if (!snap) { write_done("error", rate ? "out of memory" : "no audio yet"); logf_("save: %s", rate ? "out of memory" : "no audio stream yet"); return; }
+  if (!snap) { write_done("error", rate ? "out of memory" : "no audio yet"); logf_("save: %s", rate ? "out of memory" : "no audio stream yet"); return 0; }
   uint32_t n = sb_buf_snapshot(&G.buf, snap, want);
   char dir[256], path[512];
   sb_resolve_output_dir(&G.cfg, dir, sizeof dir);
@@ -201,19 +223,51 @@ static void save_now(void) {
     snprintf(d, sizeof d, "%s", strerror(-rc));
     write_done("error", d);
     logf_("save failed: %s (dir %s)", d, dir);
-    return;
+    return 0;
   }
   logf_("saved %u frames (%.1f s) to %s", n, (double)n / rate, path);
   write_done("ok", path);
   if (G.cfg.click) atomic_store(&G.click_req, 1);
+  return 1;
+}
+
+static void sleep_ms(unsigned ms) {
+  struct timespec ts = { ms / 1000, (long)(ms % 1000) * 1000000L };
+  nanosleep(&ts, NULL);
+}
+
+/* One LED change on the controller: control change, channel 1, controller = button, value = state. */
+static void led_set(snd_rawmidi_t *out, unsigned button, unsigned value) {
+  unsigned char m[3] = { 0xB0, (unsigned char)button, (unsigned char)value };
+  pthread_mutex_lock(&G.wr_lock);
+  if (real_rm_write && out == atomic_load(&G.rm_out)) { ssize_t w = real_rm_write(out, m, 3); (void)w; }
+  pthread_mutex_unlock(&G.wr_lock);
+}
+
+/* Blink the LED, then put back the value MPC last gave it (looked up again at the end: MPC may have changed it). */
+static void led_flash(void) {
+  snd_rawmidi_t *out = atomic_load(&G.rm_out);
+  unsigned btn = G.cfg.led_button >= 0 ? (unsigned)G.cfg.led_button : G.cfg.button;
+  if (!G.cfg.led || !out || btn > 127) return;
+  for (unsigned i = 0; i < G.cfg.led_blinks; i++) {
+    led_set(out, btn, G.cfg.led_on);
+    sleep_ms(G.cfg.led_ms);
+    led_set(out, btn, 0);
+    sleep_ms(G.cfg.led_ms);
+  }
+  pthread_mutex_lock(&G.wr_lock);
+  unsigned v = G.led.val[btn];
+  pthread_mutex_unlock(&G.wr_lock);
+  led_set(out, btn, v);
 }
 
 static void *save_thread(void *arg) {
   (void)arg;
   for (;;) {
-    struct timespec ts = { 0, (long)G.cfg.poll_ms * 1000000L };
-    nanosleep(&ts, NULL);
-    if (unlink(G.cfg.trigger) == 0) save_now();   /* consuming the marker is the trigger: two presses are two saves */
+    sleep_ms(G.cfg.poll_ms);
+    int want = atomic_exchange(&G.btn_req, 0);
+    if (unlink(G.cfg.trigger) == 0) want = 1;     /* consuming the marker is the trigger: two presses are two saves */
+    if (want && save_now()) led_flash();
   }
   return NULL;
 }
@@ -325,5 +379,99 @@ EXPORT snd_pcm_sframes_t snd_pcm_writen(snd_pcm_t *pcm, void **bufs, snd_pcm_ufr
   }
   snd_pcm_sframes_t r = real_writen(pcm, bufs, n);
   if (tap && r < (snd_pcm_sframes_t)n) sb_buf_rewind(&G.buf, (uint32_t)(r < 0 ? n : n - (snd_pcm_uframes_t)r));
+  return r;
+}
+
+/* ---- controller MIDI (the "Private" rawmidi port) ---------------------------------------------- */
+
+static long long now_ms(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+/* Same test as the button remap shim: the port's name or subdevice name has "Private" in it. */
+static int is_private(snd_rawmidi_t *h) {
+  size_t (*info_sizeof)(void) = dlsym(RTLD_DEFAULT, "snd_rawmidi_info_sizeof");
+  int (*info)(snd_rawmidi_t *, snd_rawmidi_info_t *) = dlsym(RTLD_DEFAULT, "snd_rawmidi_info");
+  const char *(*subname)(const snd_rawmidi_info_t *) = dlsym(RTLD_DEFAULT, "snd_rawmidi_info_get_subdevice_name");
+  const char *(*devname)(const snd_rawmidi_info_t *) = dlsym(RTLD_DEFAULT, "snd_rawmidi_info_get_name");
+  int found = 0;
+  if (!info_sizeof || !info || !subname || !devname) return 0;
+  snd_rawmidi_info_t *ri = calloc(1, info_sizeof());
+  if (ri && info(h, ri) == 0) {
+    const char *sn = subname(ri), *dn = devname(ri);
+    found = (sn && strstr(sn, "Private")) || (dn && strstr(dn, "Private"));
+  }
+  free(ri);
+  return found;
+}
+
+EXPORT int snd_rawmidi_open(snd_rawmidi_t **in, snd_rawmidi_t **out, const char *name, int mode) {
+  if (!real_rm_open) resolve_reals();
+  if (!real_rm_open) return -ENOSYS;
+  int r = real_rm_open(in, out, name, mode);
+  if (r != 0 || !G.active || !G.cfg.button) return r;
+  if (in && *in && is_private(*in)) {
+    sb_btn_init(&G.btn, G.cfg.button, G.cfg.double_ms);
+    atomic_store(&G.rm_in, *in);
+    logf_("controller input hooked (%s)", name ? name : "?");
+  }
+  if (out && *out && is_private(*out)) {
+    pthread_mutex_lock(&G.wr_lock);
+    sb_led_init(&G.led);                 /* MPC sends every LED again after opening */
+    pthread_mutex_unlock(&G.wr_lock);
+    atomic_store(&G.rm_out, *out);
+    logf_("controller output hooked (%s)", name ? name : "?");
+  }
+  return r;
+}
+
+EXPORT int snd_rawmidi_close(snd_rawmidi_t *h) {
+  if (!real_rm_close) resolve_reals();
+  if (!real_rm_close) return -ENOSYS;
+  if (G.active && h) {
+    if (h == atomic_load(&G.rm_in)) atomic_store(&G.rm_in, NULL);
+    if (h == atomic_load(&G.rm_out)) {
+      pthread_mutex_lock(&G.wr_lock);      /* wait for a flash write in flight */
+      atomic_store(&G.rm_out, NULL);
+      pthread_mutex_unlock(&G.wr_lock);
+    }
+  }
+  return real_rm_close(h);
+}
+
+static void log_hex(const char *what, const unsigned char *p, size_t n) {
+  char b[96];
+  size_t k = 0;
+  for (size_t i = 0; i < n && i < 16 && k + 4 < sizeof b; i++) k += (size_t)snprintf(b + k, sizeof b - k, "%02X ", p[i]);
+  logf_("%s %s", what, b);
+}
+
+/* Reads pass through untouched; the bytes are only looked at. */
+EXPORT ssize_t snd_rawmidi_read(snd_rawmidi_t *h, void *buf, size_t size) {
+  if (!real_rm_read) resolve_reals();
+  if (!real_rm_read) return -ENOSYS;
+  ssize_t r = real_rm_read(h, buf, size);
+  if (r > 0 && G.active && h == atomic_load_explicit(&G.rm_in, memory_order_relaxed)) {
+    if (G.cfg.midi_log && r <= 8) log_hex("controller in:", buf, (size_t)r);
+    if (sb_btn_feed(&G.btn, buf, (size_t)r, now_ms())) {
+      logf_("button %u pressed twice", G.cfg.button);
+      atomic_store(&G.btn_req, 1);
+    }
+  }
+  return r;
+}
+
+/* Writes pass through; LED changes are noted so a flash can put the real state back. */
+EXPORT ssize_t snd_rawmidi_write(snd_rawmidi_t *h, const void *buf, size_t size) {
+  if (!real_rm_write) resolve_reals();
+  if (!real_rm_write) return -ENOSYS;
+  if (!G.active || h != atomic_load_explicit(&G.rm_out, memory_order_relaxed)) return real_rm_write(h, buf, size);
+  pthread_mutex_lock(&G.wr_lock);
+  ssize_t r = real_rm_write(h, buf, size);
+  if (r > 0 && sb_led_feed(&G.led, buf, (size_t)r) && G.cfg.midi_log)
+    logf_("led %d = %d", G.led.changed_btn, G.led.changed_val);
+  pthread_mutex_unlock(&G.wr_lock);
   return r;
 }

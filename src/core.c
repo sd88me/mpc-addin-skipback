@@ -29,6 +29,14 @@ void sb_cfg_defaults(sb_cfg *c) {
   c->right = 1;
   c->click = 0;
   c->poll_ms = 100;
+  c->button = 93;
+  c->double_ms = 350;
+  c->led = 1;
+  c->led_button = -1;
+  c->led_on = 3;
+  c->led_blinks = 3;
+  c->led_ms = 120;
+  c->midi_log = 0;
 }
 
 static int parse_uint(const char *v, unsigned lo, unsigned hi, unsigned *out) {
@@ -80,6 +88,14 @@ int sb_cfg_load(sb_cfg *c, const char *path, char *err, size_t errn) {
       else if (!strcmp(k, "left")) { if (!parse_uint(v, 0, 31, &u)) { c->left = u; rc = 0; } }
       else if (!strcmp(k, "right")) { if (!parse_uint(v, 0, 31, &u)) { c->right = u; rc = 0; } }
       else if (!strcmp(k, "click")) { if (!parse_uint(v, 0, 1, &u)) { c->click = (int)u; rc = 0; } }
+      else if (!strcmp(k, "button")) { if (!parse_uint(v, 0, 127, &u)) { c->button = u; rc = 0; } }
+      else if (!strcmp(k, "double_ms")) { if (!parse_uint(v, 100, 2000, &u)) { c->double_ms = u; rc = 0; } }
+      else if (!strcmp(k, "led")) { if (!parse_uint(v, 0, 1, &u)) { c->led = (int)u; rc = 0; } }
+      else if (!strcmp(k, "led_button")) { if (!strcmp(v, "auto")) { c->led_button = -1; rc = 0; } else if (!parse_uint(v, 0, 127, &u)) { c->led_button = (int)u; rc = 0; } }
+      else if (!strcmp(k, "led_on")) { if (!parse_uint(v, 0, 127, &u)) { c->led_on = u; rc = 0; } }
+      else if (!strcmp(k, "led_blinks")) { if (!parse_uint(v, 1, 10, &u)) { c->led_blinks = u; rc = 0; } }
+      else if (!strcmp(k, "led_ms")) { if (!parse_uint(v, 30, 1000, &u)) { c->led_ms = u; rc = 0; } }
+      else if (!strcmp(k, "midi_log")) { if (!parse_uint(v, 0, 1, &u)) { c->midi_log = (int)u; rc = 0; } }
       else if (!strcmp(k, "poll_ms")) { if (!parse_uint(v, 20, 5000, &u)) { c->poll_ms = u; rc = 0; } }
     }
     if (rc) {
@@ -89,6 +105,60 @@ int sb_cfg_load(sb_cfg *c, const char *path, char *err, size_t errn) {
   }
   fclose(f);
   return bad;
+}
+
+/* ---- controller MIDI ------------------------------------------------------------------------ */
+
+void sb_mparse_feed(sb_mparse *s, const uint8_t *p, size_t n, sb_msg_cb cb, void *ctx) {
+  for (size_t i = 0; i < n; i++) {
+    uint8_t b = p[i];
+    if (b >= 0xF8) continue;                       /* realtime: may sit anywhere, changes nothing */
+    if (s->in_sysex) {
+      if (b < 0x80) continue;
+      s->in_sysex = 0;                             /* F7, or a status byte that ends it */
+      if (b == 0xF7) continue;
+    }
+    if (b == 0xF0) { s->in_sysex = 1; s->run = 0; s->have = 0; continue; }
+    if (b & 0x80) {
+      s->run = b >= 0xF0 ? 0 : b;
+      s->have = 0;
+      continue;
+    }
+    if (!s->run || (s->run & 0xF0) == 0xC0 || (s->run & 0xF0) == 0xD0) continue;   /* no status / 1-data-byte message */
+    if (!s->have) { s->d1 = b; s->have = 1; continue; }
+    s->have = 0;
+    cb(s->run, s->d1, b, ctx);
+  }
+}
+
+static void btn_msg(uint8_t st, uint8_t d1, uint8_t d2, void *ctx) {
+  sb_btn *b = ctx;
+  if (st != 0x90 || d1 != b->note || d2 == 0) return;
+  if (b->has_last && b->now_ms - b->last_ms <= (long long)b->dbl_ms) { b->doubles++; b->has_last = 0; }
+  else { b->has_last = 1; b->last_ms = b->now_ms; }
+}
+
+void sb_btn_init(sb_btn *b, unsigned note, unsigned dbl_ms) { memset(b, 0, sizeof *b); b->note = note; b->dbl_ms = dbl_ms; }
+
+int sb_btn_feed(sb_btn *b, const uint8_t *p, size_t n, long long now_ms) {
+  b->now_ms = now_ms;
+  b->doubles = 0;
+  sb_mparse_feed(&b->mp, p, n, btn_msg, b);
+  return b->doubles;
+}
+
+static void led_msg(uint8_t st, uint8_t d1, uint8_t d2, void *ctx) {
+  sb_led *l = ctx;
+  if (st != 0xB0 || d1 > 127) return;
+  if (l->val[d1] != d2) { l->val[d1] = d2; l->changed_btn = d1; l->changed_val = d2; l->changed++; }
+}
+
+void sb_led_init(sb_led *l) { memset(l, 0, sizeof *l); }
+
+int sb_led_feed(sb_led *l, const uint8_t *p, size_t n) {
+  l->changed = 0;
+  sb_mparse_feed(&l->mp, p, n, led_msg, l);
+  return l->changed;
 }
 
 /* ---- sample formats ------------------------------------------------------------------------- */

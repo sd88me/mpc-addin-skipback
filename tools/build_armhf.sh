@@ -27,7 +27,7 @@ if [ "$(printf '%s\nGLIBC_2.31\n' "$max" | sort -V | tail -n1)" != GLIBC_2.31 ];
   echo "FAIL: needs $max; the oldest supported MPC OS has glibc 2.31" >&2; exit 1
 fi
 echo "exports:"; sed 's/^/  /' "$OUT/exports.txt"
-unexpected=$(grep -Ev '^(snd_pcm_(open|close|hw_params|writei|writen))$' "$OUT/exports.txt" || true)
+unexpected=$(grep -Ev '^(snd_(pcm_(open|close|hw_params|writei|writen)|rawmidi_(open|close|read|write)))$' "$OUT/exports.txt" || true)
 if [ -n "$unexpected" ]; then echo "FAIL: unexpected exports: $unexpected" >&2; exit 1; fi
 P=build/package
 rm -rf "$P"; mkdir -p "$P"

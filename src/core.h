@@ -21,11 +21,40 @@ typedef struct {
   unsigned left, right;         /* channels of MPC's playback stream that hold main out */
   int click;                    /* mix a short click into main out when a save finishes (not recorded) */
   unsigned poll_ms;
+  unsigned button;              /* controller button (channel 1 note) whose double press saves; 0 = no button */
+  unsigned double_ms;           /* two presses within this many ms are a double press */
+  int led;                      /* flash an LED on the controller when a save finishes */
+  int led_button;               /* the LED (a button number); -1 = the same as `button` */
+  unsigned led_on;              /* LED value for the lit half of a blink */
+  unsigned led_blinks;
+  unsigned led_ms;              /* length of each half of a blink */
+  int midi_log;                 /* log the controller's button presses and LED changes (to learn the values) */
 } sb_cfg;
 
 void sb_cfg_defaults(sb_cfg *c);
 /* Parse key=value lines. Returns the number of bad lines, or -1 if the file can't be read (defaults stay). */
 int sb_cfg_load(sb_cfg *c, const char *path, char *err, size_t errn);
+
+/* ---- controller MIDI -------------------------------------------------------------------------- */
+
+/* Splits a MIDI byte stream (running status, SysEx and realtime bytes handled; chunks may end anywhere) into
+ * 3-byte channel messages and calls cb(status, d1, d2, ctx) for each; 1-data-byte messages are skipped. */
+typedef struct { uint8_t run, d1; int have, in_sysex; } sb_mparse;
+typedef void (*sb_msg_cb)(uint8_t status, uint8_t d1, uint8_t d2, void *ctx);
+void sb_mparse_feed(sb_mparse *s, const uint8_t *p, size_t n, sb_msg_cb cb, void *ctx);
+
+/* Double-press detector for one button: note-on (channel 1, velocity > 0) of `note` twice within `dbl_ms`. */
+typedef struct { sb_mparse mp; unsigned note, dbl_ms; int has_last; long long last_ms, now_ms; int doubles; } sb_btn;
+void sb_btn_init(sb_btn *b, unsigned note, unsigned dbl_ms);
+/* Feeds bytes read from the controller at time now_ms. Returns the number of double presses seen in them. */
+int sb_btn_feed(sb_btn *b, const uint8_t *p, size_t n, long long now_ms);
+
+/* LED state as MPC last wrote it: control change channel 1, controller = button, value = LED state. */
+typedef struct { sb_mparse mp; uint8_t val[128]; int changed_btn, changed_val, changed; } sb_led;
+void sb_led_init(sb_led *l);
+/* Feeds bytes MPC wrote to the controller. Returns the number of LED values that changed; the last change is in
+ * changed_btn / changed_val. */
+int sb_led_feed(sb_led *l, const uint8_t *p, size_t n);
 
 /* Sample formats MPC may open the codec with. */
 typedef enum { SB_FMT_UNKNOWN = 0, SB_FMT_S16, SB_FMT_S24_3, SB_FMT_S24_4, SB_FMT_S32, SB_FMT_F32 } sb_fmt;

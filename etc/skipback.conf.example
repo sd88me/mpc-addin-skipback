@@ -28,6 +28,25 @@ left=0
 right=1
 tap_card=auto
 
+# The controller button whose double press saves (a channel-1 note; 93 is Rec Arm on a Force, 73 is Rec;
+# 0 turns the button off and leaves the trigger file). The first press still reaches MPC, so it arms as usual.
+button=93
+# Two presses within this many ms are a double press.
+double_ms=350
+
+# When a save finishes, blink this LED (a button number; auto = the button above) led_blinks times, then put
+# back the value MPC had given it. led_on is the lit half's LED value, led_ms the length of each half.
+# MPC sets button LEDs with control changes on channel 1 (controller = button, value = state);
+# the right values are learned on a device with midi_log=1 (below).
+led=1
+led_button=auto
+led_on=3
+led_blinks=3
+led_ms=120
+
+# 1 logs controller presses and every LED change MPC makes, to find the values for led_on. Leave it 0 otherwise.
+midi_log=0
+
 # How often the trigger file is looked for, ms.
 poll_ms=100
 

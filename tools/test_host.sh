@@ -37,6 +37,7 @@ CONF
 }
 mk "$tmp/a"; run "$B/bin/MPC" mpc "$tmp/a" || { cat "$tmp/a/skipback.log"; exit 1; }
 mk "$tmp/b" click=1; touch "$tmp/b/click-on"; run "$B/bin/MPC" mpc "$tmp/b" || { cat "$tmp/b/skipback.log"; exit 1; }
+mk "$tmp/f" led_ms=30; touch "$tmp/f/btn-on"; run "$B/bin/MPC" mpc "$tmp/f" || { cat "$tmp/f/skipback.log"; exit 1; }
 mk "$tmp/c"; run "$B/bin/not-mpc" inert "$tmp/c"
 mk "$tmp/d" enabled=0; run "$B/bin/MPC" inert "$tmp/d"
 mk "$tmp/e"; run /bin/true x "$tmp/e" 2>/dev/null || true
