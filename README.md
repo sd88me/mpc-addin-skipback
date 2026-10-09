@@ -65,7 +65,7 @@ Record** (rule in `akai_standalone_remap`, which doesn't have this action yet), 
 Files go to `/sdcard/Force Documents/Samples/Skipback` when `/sdcard/Force Documents` exists, otherwise
 `/sdcard/Skipback`. Set `output_dir` to change it.
 
-`device_test.sh` (in the release zip, source in `tools/`) does the steps above and prints the file's size.
+`tools/device_test.sh` (copy it to the device) does the steps above and prints the file's size.
 
 ## Settings
 
