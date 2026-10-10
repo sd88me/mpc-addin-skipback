@@ -132,11 +132,14 @@ int main(int argc, char **argv) {
     fake_rm_feed(two, sizeof two); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), (ssize_t)sizeof two);
     CHECK(!memcmp(got, two, sizeof two));
     CHECK_EQ(wait_done(body, sizeof body), 0); CHECK(!strncmp(body, "ok ", 3));
-    for (int i = 0; i < 100 && fake_rm_out_n < 3 + 6 * 3 + 3; i++) usleep(20000);
-    CHECK_EQ(fake_rm_out_n, 3 + 6 * 3 + 3);                    /* MPC's write, 3 blinks (on, off), then the real state back */
-    if (fake_rm_out_n == 24) {
-      for (int k = 0; k < 3; k++) { CHECK(!memcmp(fake_rm_out + 3 + k * 6, "\xB0\x5D\x03", 3)); CHECK(!memcmp(fake_rm_out + 6 + k * 6, "\xB0\x5D\x00", 3)); }
-      CHECK(!memcmp(fake_rm_out + 21, "\xB0\x5D\x03", 3));
+    for (int i = 0; i < 100 && fake_rm_out_n < 3 + 2 * (6 * 3 + 3); i++) usleep(20000);
+    CHECK_EQ(fake_rm_out_n, 3 + 2 * (6 * 3 + 3));              /* MPC's write; 3 fast blinks and the state back; 3 slow blinks and the state back */
+    if (fake_rm_out_n == 45) {
+      for (int round = 0; round < 2; round++) {
+        const unsigned char *o = fake_rm_out + 3 + round * 21;
+        for (int k = 0; k < 3; k++) { CHECK(!memcmp(o + k * 6, "\xB0\x5D\x03", 3)); CHECK(!memcmp(o + 3 + k * 6, "\xB0\x5D\x00", 3)); }
+        CHECK(!memcmp(o + 18, "\xB0\x5D\x03", 3));
+      }
     }
     /* one press, or two slow ones, don't */
     unlink(done); fake_rm_feed(two, 6); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), 6);

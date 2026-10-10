@@ -35,7 +35,9 @@ void sb_cfg_defaults(sb_cfg *c) {
   c->led_button = -1;
   c->led_on = 3;
   c->led_blinks = 3;
-  c->led_ms = 120;
+  c->led_ms = 250;
+  c->led_fast_blinks = 3;
+  c->led_fast_ms = 50;
   c->midi_log = 0;
 }
 
@@ -94,6 +96,8 @@ int sb_cfg_load(sb_cfg *c, const char *path, char *err, size_t errn) {
       else if (!strcmp(k, "led_button")) { if (!strcmp(v, "auto")) { c->led_button = -1; rc = 0; } else if (!parse_uint(v, 0, 127, &u)) { c->led_button = (int)u; rc = 0; } }
       else if (!strcmp(k, "led_on")) { if (!parse_uint(v, 0, 127, &u)) { c->led_on = u; rc = 0; } }
       else if (!strcmp(k, "led_blinks")) { if (!parse_uint(v, 1, 10, &u)) { c->led_blinks = u; rc = 0; } }
+      else if (!strcmp(k, "led_fast_blinks")) { if (!parse_uint(v, 0, 10, &u)) { c->led_fast_blinks = u; rc = 0; } }
+      else if (!strcmp(k, "led_fast_ms")) { if (!parse_uint(v, 20, 500, &u)) { c->led_fast_ms = u; rc = 0; } }
       else if (!strcmp(k, "led_ms")) { if (!parse_uint(v, 30, 1000, &u)) { c->led_ms = u; rc = 0; } }
       else if (!strcmp(k, "midi_log")) { if (!parse_uint(v, 0, 1, &u)) { c->midi_log = (int)u; rc = 0; } }
       else if (!strcmp(k, "poll_ms")) { if (!parse_uint(v, 20, 5000, &u)) { c->poll_ms = u; rc = 0; } }

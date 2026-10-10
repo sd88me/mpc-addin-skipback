@@ -244,21 +244,28 @@ static void led_set(snd_rawmidi_t *out, unsigned button, unsigned value) {
   pthread_mutex_unlock(&G.wr_lock);
 }
 
-/* Blink the LED, then put back the value MPC last gave it (looked up again at the end: MPC may have changed it). */
-static void led_flash(void) {
+/* Blink the LED n times, then put back the value MPC last gave it (looked up again at the end: MPC may have changed it). */
+static void led_blink(unsigned n, unsigned ms) {
   snd_rawmidi_t *out = atomic_load(&G.rm_out);
   unsigned btn = G.cfg.led_button >= 0 ? (unsigned)G.cfg.led_button : G.cfg.button;
-  if (!G.cfg.led || !out || btn > 127) return;
-  for (unsigned i = 0; i < G.cfg.led_blinks; i++) {
+  if (!G.cfg.led || !n || !out || btn > 127) return;
+  for (unsigned i = 0; i < n; i++) {
     led_set(out, btn, G.cfg.led_on);
-    sleep_ms(G.cfg.led_ms);
+    sleep_ms(ms);
     led_set(out, btn, 0);
-    sleep_ms(G.cfg.led_ms);
+    sleep_ms(ms);
   }
   pthread_mutex_lock(&G.wr_lock);
   unsigned v = G.led.val[btn];
   pthread_mutex_unlock(&G.wr_lock);
   led_set(out, btn, v);
+}
+
+/* Fast blinks say the trigger registered. They run beside the save, so the save is not held up by them. */
+static void *ack_thread(void *arg) {
+  (void)arg;
+  led_blink(G.cfg.led_fast_blinks, G.cfg.led_fast_ms);
+  return NULL;
 }
 
 static void *save_thread(void *arg) {
@@ -267,7 +274,12 @@ static void *save_thread(void *arg) {
     sleep_ms(G.cfg.poll_ms);
     int want = atomic_exchange(&G.btn_req, 0);
     if (unlink(G.cfg.trigger) == 0) want = 1;     /* consuming the marker is the trigger: two presses are two saves */
-    if (want && save_now()) led_flash();
+    if (!want) continue;
+    pthread_t ack;
+    int acking = pthread_create(&ack, NULL, ack_thread, NULL) == 0;
+    int saved = save_now();
+    if (acking) pthread_join(ack, NULL);
+    if (saved) led_blink(G.cfg.led_blinks, G.cfg.led_ms);
   }
   return NULL;
 }

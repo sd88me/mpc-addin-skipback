@@ -34,15 +34,18 @@ button=93
 # Two presses within this many ms are a double press.
 double_ms=350
 
-# When a save finishes, blink this LED (a button number; auto = the button above) led_blinks times, then put
-# back the value MPC had given it. led_on is the lit half's LED value, led_ms the length of each half.
+# LED feedback on the button above (or led_button, a button number): led_fast_blinks quick blinks as soon as the
+# press registers, then led_blinks slow ones when the WAV is written. After each run the value MPC had given the
+# LED is put back. led_on is the lit half's LED value, led_ms / led_fast_ms the length of each half in ms.
 # MPC sets button LEDs with control changes on channel 1 (controller = button, value = state);
 # the right values are learned on a device with midi_log=1 (below).
 led=1
 led_button=auto
 led_on=3
 led_blinks=3
-led_ms=120
+led_ms=250
+led_fast_blinks=3
+led_fast_ms=50
 
 # 1 logs controller presses and every LED change MPC makes, to find the values for led_on. Leave it 0 otherwise.
 midi_log=0

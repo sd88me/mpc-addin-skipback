@@ -26,8 +26,10 @@ typedef struct {
   int led;                      /* flash an LED on the controller when a save finishes */
   int led_button;               /* the LED (a button number); -1 = the same as `button` */
   unsigned led_on;              /* LED value for the lit half of a blink */
-  unsigned led_blinks;
-  unsigned led_ms;              /* length of each half of a blink */
+  unsigned led_blinks;          /* slow blinks when the WAV is written */
+  unsigned led_ms;              /* length of each half of a slow blink */
+  unsigned led_fast_blinks;     /* fast blinks when the trigger is registered, 0 = none */
+  unsigned led_fast_ms;
   int midi_log;                 /* log the controller's button presses and LED changes (to learn the values) */
 } sb_cfg;
 
