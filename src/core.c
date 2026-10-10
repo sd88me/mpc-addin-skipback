@@ -311,13 +311,54 @@ int sb_wav_write(const char *path, const int32_t *frames, uint32_t n, unsigned r
 
 /* ---- paths ----------------------------------------------------------------------------------- */
 
-void sb_resolve_output_dir(const sb_cfg *c, char *out, size_t n) {
-  if (strcmp(c->output_dir, "auto")) { snprintf(out, n, "%s", c->output_dir); return; }
+static int is_dir(const char *p) {
   struct stat st;
-  if (stat("/sdcard/Force Documents", &st) == 0 && S_ISDIR(st.st_mode))
-    snprintf(out, n, "/sdcard/Force Documents/Samples/Skipback");
-  else
-    snprintf(out, n, "/sdcard/Skipback");
+  return stat(p, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
+/* val="..." of a <VALUE name="..."> line, copied to out; 0 if the line has none. */
+static int line_val(const char *line, char *out, size_t n) {
+  const char *v = strstr(line, " val=\"");
+  if (!v) return 0;
+  v += 6;
+  const char *e = strchr(v, '"');
+  if (!e || (size_t)(e - v) >= n || e == v) return 0;
+  memcpy(out, v, (size_t)(e - v));
+  out[e - v] = 0;
+  return 1;
+}
+
+static int ends_with(const char *s, const char *suffix) {
+  size_t a = strlen(s), b = strlen(suffix);
+  return a >= b && !strcmp(s + a - b, suffix);
+}
+
+void sb_resolve_output_dir(const sb_cfg *c, const char *settings_path, char *out, size_t n) {
+  if (strcmp(c->output_dir, "auto")) { snprintf(out, n, "%s", c->output_dir); return; }
+  char samples[320] = "", from_recent[320] = "", v[300];
+  FILE *f = settings_path ? fopen(settings_path, "re") : NULL;
+  if (f) {
+    char line[700];
+    while (!samples[0] && fgets(line, sizeof line, f)) {
+      const char *name = strstr(line, "name=\"");
+      if (!name || !line_val(line, v, sizeof v)) continue;
+      if (!strncmp(name + 6, "folder", 6) && ends_with(v, "/Samples") && is_dir(v)) snprintf(samples, sizeof samples, "%s", v);
+      else if (!from_recent[0] && !strncmp(name + 6, "recentProject", 13)) {
+        char *slash = strrchr(v, '/');            /* .../Projects/x.xpj -> .../Projects */
+        if (slash) { *slash = 0; slash = strrchr(v, '/'); }
+        if (slash) { *slash = 0; snprintf(from_recent, sizeof from_recent, "%s/Samples", v); if (!is_dir(from_recent)) from_recent[0] = 0; }
+      }
+    }
+    fclose(f);
+  }
+  if (!samples[0] && from_recent[0]) snprintf(samples, sizeof samples, "%s", from_recent);
+  if (!samples[0]) {
+    static const char *const docs[] = { "/sdcard/Force Documents/Samples", "/sdcard/MPC Documents/Samples", "/sdcard/APC Documents/Samples" };
+    for (size_t i = 0; i < sizeof docs / sizeof *docs && !samples[0]; i++)
+      if (is_dir(docs[i])) snprintf(samples, sizeof samples, "%s", docs[i]);
+  }
+  if (samples[0]) snprintf(out, n, "%s/Skipback", samples);
+  else snprintf(out, n, "/data/Skipback");
 }
 
 int sb_mkdir_p(const char *dir) {

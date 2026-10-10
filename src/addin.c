@@ -211,7 +211,10 @@ static int save_now(void) {
   if (!snap) { write_done("error", rate ? "out of memory" : "no audio yet"); logf_("save: %s", rate ? "out of memory" : "no audio stream yet"); return 0; }
   uint32_t n = sb_buf_snapshot(&G.buf, snap, want);
   char dir[256], path[512];
-  sb_resolve_output_dir(&G.cfg, dir, sizeof dir);
+  const char *settings = getenv("MPC_SKIPBACK_SETTINGS");
+  if (!settings || !*settings) settings = access("/data/Settings/MPC/MPC.settings", R_OK) == 0 ? "/data/Settings/MPC/MPC.settings"
+                                                                                     : "/media/az01-internal/Settings/MPC/MPC.settings";
+  sb_resolve_output_dir(&G.cfg, settings, dir, sizeof dir);
   int rc = n ? sb_mkdir_p(dir) : -ENODATA;
   if (!rc) {
     sb_make_path(dir, (long)time(NULL), path, sizeof path);

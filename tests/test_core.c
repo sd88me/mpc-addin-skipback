@@ -103,6 +103,33 @@ int main(void) {
   int32_t mx = 0; for (uint32_t i = 0; i < cf; i++) { int32_t s = sb_click_sample(i, 44100); if (s > mx) mx = s; }
   CHECK(mx > 100000000 && mx < 300000000); CHECK_EQ(sb_click_sample(0, 44100), 0); CHECK_EQ(sb_click_sample(cf, 44100), 0);
 
+  /* output folder */
+  {
+    char root[300], st[400], o[400], d[1500];
+    snprintf(root, sizeof root, "%s/dev", dir);
+    snprintf(st, sizeof st, "%s/MPC.settings", dir);
+    sb_cfg c3; sb_cfg_defaults(&c3);
+    snprintf(d, sizeof d, "%s/other Documents/Samples", root); CHECK_EQ(sb_mkdir_p(d), 0);
+    snprintf(d, sizeof d, "%s/Thing/Samples", root); CHECK_EQ(sb_mkdir_p(d), 0);
+    snprintf(d, sizeof d, "%s/Thing/Projects", root); CHECK_EQ(sb_mkdir_p(d), 0);
+    /* a browser shortcut that ends in /Samples and exists wins; one that doesn't exist, or isn't Samples, is skipped */
+    snprintf(d, sizeof d, "<VALUE name=\"folder1\" val=\"%s/gone/Samples\"/>\n<VALUE name=\"folder2\" val=\"%s/Thing/Projects\"/>\n"
+                          "<VALUE name=\"folder3\" val=\"%s/other Documents/Samples\"/>\n", root, root, root);
+    write_file(st, d);
+    sb_resolve_output_dir(&c3, st, o, sizeof o);
+    snprintf(d, sizeof d, "%s/other Documents/Samples/Skipback", root); CHECK(!strcmp(o, d));
+    /* no shortcut: the Samples folder beside the Projects folder of a recent project */
+    snprintf(d, sizeof d, "<VALUE name=\"recentProject1\" val=\"%s/nowhere/Projects/a.xpj\"/>\n<VALUE name=\"recentProject2\" val=\"%s/Thing/Projects/b.xpj\"/>\n", root, root);
+    write_file(st, d);
+    sb_resolve_output_dir(&c3, st, o, sizeof o);
+    snprintf(d, sizeof d, "%s/Thing/Samples/Skipback", root); CHECK(!strcmp(o, d));
+    /* nothing usable (no settings file): a fixed fallback; an explicit folder is taken as it is */
+    sb_resolve_output_dir(&c3, "/nonexistent/MPC.settings", o, sizeof o);
+    CHECK(!strcmp(o, "/sdcard/Force Documents/Samples/Skipback") || !strcmp(o, "/sdcard/MPC Documents/Samples/Skipback") ||
+          !strcmp(o, "/sdcard/APC Documents/Samples/Skipback") || !strcmp(o, "/data/Skipback"));
+    snprintf(c3.output_dir, sizeof c3.output_dir, "/x/y"); sb_resolve_output_dir(&c3, st, o, sizeof o); CHECK(!strcmp(o, "/x/y"));
+  }
+
   /* controller MIDI: double press of button 93 */
   {
     sb_btn bt; sb_btn_init(&bt, 93, 350);

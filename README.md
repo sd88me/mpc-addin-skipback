@@ -64,10 +64,24 @@ appear. Setting `click=1` also plays a short click through main out when a save 
 
 Anything can create the file: a script, a plugin, or a hardware-button remap. The button needs no remap tool.
 
-Files go to `/sdcard/Force Documents/Samples/Skipback` when `/sdcard/Force Documents` exists, otherwise
-`/sdcard/Skipback`. Set `output_dir` to change it.
+Files go to a `Skipback` folder inside the device's own Samples folder (see [Where things live](#where-things-live)),
+so they show up in the sample browser. Set `output_dir` to an absolute path to put them elsewhere.
 
 `tools/device_test.sh` (copy it to the device) does the steps above and prints the file's size.
+
+## Where things live
+
+- **The addin itself** is always installed on the internal storage, in `/data/mpc-addins/skipback/` (the library,
+  `skipback.conf` and `skipback.log`). It is loaded into MPC as it starts, before the SD card or a USB drive may be
+  mounted, and the system disk is read-only, so the SD card and USB drives are not options for the install.
+- **The recordings** go wherever `output_dir` says. With `auto` the addin asks MPC where *this* device keeps its
+  samples, each time it saves, from `MPC.settings`: the browser shortcut that ends in `/Samples` (on the Force used for
+  testing: `/sdcard/Force Documents/Samples`), else the Samples folder next to the Projects folder of a recent
+  project, else a `Force`, `MPC` or `APC Documents/Samples` folder on the SD card, else `/data/Skipback`. A WAV is
+  about 8 MB for 30 s. To record onto a USB drive or SSD, set `output_dir` to a path on it, for example
+  `/media/<drive id>/Skipback`: if the drive is not mounted when you save, the save fails with an `error` in the
+  `done` file rather than going somewhere else.
+- Only the Force has been checked; the `auto` rules for the MPC models are untested.
 
 ## Settings
 
@@ -77,7 +91,7 @@ Files go to `/sdcard/Force Documents/Samples/Skipback` when `/sdcard/Force Docum
 |---|---|---|
 | `enabled` | `1` | `0` leaves the library loaded but idle |
 | `window_sec` | `30` | seconds saved per trigger, 1 to 60 |
-| `output_dir` | `auto` | where the WAVs go (absolute path) |
+| `output_dir` | `auto` | where the WAVs go: `auto` = `Skipback` inside this device's Samples folder, or an absolute path |
 | `trigger` / `done` | `/tmp/mpc-addin-skipback.{trigger,done}` | the two marker files |
 | `button` | `93` | controller button (channel-1 note) whose double press saves; 93 is Rec Arm on a Force, 73 is Rec; `0` = off |
 | `double_ms` | `350` | two presses within this are a double press |
