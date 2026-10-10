@@ -3,8 +3,8 @@
 # 0 leaves the library loaded but idle.
 enabled=1
 
-# Seconds of main out saved by each trigger, 1..60. Memory is only used as audio arrives
-# (30 s is about 10 MB).
+# Seconds of main out saved by each trigger, 1..60. The rolling buffer is the same size whatever this is: it
+# grows to about 48 MB of RAM over the first couple of minutes and stays there.
 window_sec=30
 
 # Where the WAVs go, in a Skipback folder. "auto" takes the first that is there at save time:

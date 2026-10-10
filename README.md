@@ -2,158 +2,220 @@
 
 ![MPC Skipback: double-press a button to save the last 30-60 seconds](docs/img/skipback.png)
 
-An addin for Akai MPC OS standalone devices (MPC Live, One, X, Key and Force) that records the main output
-all the time and, when you ask, saves the **last 30 seconds** as a WAV file: the take you didn't know you wanted
-until it was over.
+**Record the past.** Skipback listens to your MPC's main output all the time. When you double-press a button, it
+saves the **last 30 to 60 seconds** as a WAV file, so the idea you had a moment ago is already on the card.
 
-> **Status: works on a Force (MPC OS 5.0.17, 2026-10-10).** A double press of Rec Arm saved a 30 s WAV and the LED
-> blinked when it was done. Host tests (x86, ASan/UBSan, fake libasound and rawmidi) pass. Other models are untested.
-> See [Not verified yet](#not-verified-yet).
+An addin for Akai MPC OS standalone devices (MPC Live, One, X, Key and Force). It runs inside MPC, with no extra
+program to start, and uses the controller's own buttons and LEDs. Tested on a Force; see
+[Status](#status).
 
-## What it does
+## Features
 
-- Keeps a rolling copy of main out (the first two channels of MPC's playback stream) in memory. 30 seconds is about
-  10 MB; nothing is written to disk until you trigger a save.
-- On a trigger (a double press of a controller button, or a file), writes the newest `window_sec` seconds (1 to 60, default 30) as a 24-bit stereo WAV named
-  `Skipback_YYYYMMDD_HHMMSS.wav`, then reports the result in a small file so something else (a button remap, a
-  script) can show feedback.
-- Runs inside MPC as an `LD_PRELOAD` library, so there is no extra process to start and nothing to keep running. It
-  does nothing in any program that isn't `MPC`.
+- **Always recording, nothing to arm.** A rolling buffer holds the newest audio. Nothing is written to disk until you
+  save.
+- **One gesture to save.** Double-press a hardware button (Rec Arm on a Force by default). The first press still reaches
+  MPC as usual.
+- **Light feedback.** The button's LED gives three quick flashes when the double press registers and three slow ones
+  when the WAV has been written.
+- **30 to 60 seconds**, your choice (`window_sec`), saved as a 24-bit stereo WAV with the date and time in its name.
+- **Puts the file where you'd look for it.** Saves to a USB drive or SSD if one is plugged in, else the SD card, else
+  your Samples folder. Or any folder you choose.
+- **Triggerable by anything.** A script, plugin or other tool can start a save by creating a file, and finds out the
+  result from another.
+- **Light on the system.** The audio thread only copies samples (no locks, no allocation, no system calls); the save runs
+  on its own thread. It does nothing in any program but MPC.
 
-It is the in-process successor of the Skipback in [force-audio-jack](https://github.com/sd88me/force-audio-jack), and
-uses the audio-hook technique of [mpc-addin-usb-audio](https://github.com/jacob-sabella/mpc-addin-usb-audio).
+## Requirements
+
+- An Akai MPC or Force running MPC OS (32-bit ARM; the installer checks).
+- SSH access to the device as root, to install.
+- The Force is the only model it has been tested on. See [Other models](#other-models).
 
 ## Install
 
-Needs SSH access to the device (root). Download the release zip, copy it over, then on the device:
+1. Download `MPC-Skipback-<version>-mpc-armv7.zip` from the
+   [Releases](https://github.com/sd88me/mpc-addin-skipback/releases) page and copy it to the device (for example
+   `scp` to `/tmp`).
+2. On the device, as root:
 
-```sh
-unzip MPC-Skipback-<version>-mpc-armv7.zip && cd MPC-Skipback-<version>
-sh install.sh
-```
+   ```sh
+   cd /tmp && unzip MPC-Skipback-<version>-mpc-armv7.zip && cd MPC-Skipback-<version>
+   sh install.sh
+   ```
 
-This puts the files in `/data/mpc-addins/skipback/`, adds the library to MPC's `LD_PRELOAD` (keeping everything
-already in it) and **restarts MPC**, which closes the open project. `sh install.sh -n` installs without restarting;
-the addin starts at MPC's next start. Installing again upgrades it and keeps your `skipback.conf`.
+3. **Save your project first.** The installer adds the addin to MPC's `LD_PRELOAD` (keeping everything already in it)
+   and **restarts MPC**, which closes the open project. `sh install.sh -n` installs without restarting; the addin starts
+   at MPC's next start. The addin lives in `/data/mpc-addins/skipback/` on the internal storage.
 
-Remove it with `sh /data/mpc-addins/skipback/uninstall.sh` (this also deletes `skipback.conf`; recordings are kept).
-How the installer works, and what to do if an addin stops MPC from starting, is in the
+Installing a newer version over an older one keeps your `skipback.conf`. You can also install it with the
+[MPC Plugin Manager](https://github.com/poloq-instruments/mpc-vst-manager) or `mpc-store.sh` once it is in the
+catalog. How the installer works, and what to do if an addin stops MPC from starting, is in the
 [addin guide](https://github.com/sd88me/mpc-vst-plugins/blob/main/docs/ADDINS.md).
 
-## Use
+## Using it
 
-**On a Force: press Rec Arm twice** (within 350 ms). The first press reaches MPC as usual (it arms), the second starts
-the save, and a few seconds later the Rec Arm LED blinks three times to say the WAV is written. `button`, `double_ms`
-and the `led_*` settings change this; `button=0` turns the button off.
+### Saving
 
-**From anything else**, create the trigger file and the addin saves, deletes the file, and writes the result:
+- **Double-press the button.** On a Force, press **Rec Arm** twice, within about a third of a second. The first press
+  arms or disarms recording as usual (MPC sees both presses), and the second one starts the save.
+- **Or create the trigger file.** Anything that can create `/tmp/mpc-addin-skipback.trigger` starts a save:
 
-```sh
-rm -f /tmp/mpc-addin-skipback.done
-touch /tmp/mpc-addin-skipback.trigger
-cat /tmp/mpc-addin-skipback.done        # a moment later
-```
+  ```sh
+  rm -f /tmp/mpc-addin-skipback.done
+  touch /tmp/mpc-addin-skipback.trigger
+  cat /tmp/mpc-addin-skipback.done        # a moment later
+  ```
 
-`/tmp/mpc-addin-skipback.done` holds one line:
+The addin deletes the trigger file when it takes it, so two presses are two saves. It saves what played *before* the
+trigger, up to `window_sec` seconds; right after MPC starts there may be less than the full window.
+
+### The LED
+
+| You see | It means |
+|---|---|
+| three quick flashes | the double press registered; the save has started |
+| three slow flashes | the WAV is written (usually 2 to 5 seconds later, depending on the card) |
+| quick flashes only | the save failed; see the `error` line below |
+
+After flashing, the LED goes back to whatever MPC had set it to.
+
+### The result file
+
+`/tmp/mpc-addin-skipback.done` holds one line after every save:
 
 | Line | Meaning |
 |---|---|
 | `ok <path>` | saved; the path is the new WAV |
-| `error <reason>` | nothing saved: no audio yet, disk full, folder not writable |
+| `error <reason>` | nothing saved: no audio yet, disk full, folder not writable, drive removed |
 
-Each trigger is one save; two presses make two files. To know a save finished, delete `done` first and wait for it to
-appear. Setting `click=1` also plays a short click through main out when a save succeeds (it is not recorded).
+To know a save finished, delete `done` first and wait for it to appear. `skipback.log` (in the addin folder) records
+each save and where it went.
 
-Anything can create the file: a script, a plugin, or a hardware-button remap. The button needs no remap tool.
+### Where the files go
 
-Files go to a `Skipback` folder inside the device's own Samples folder (see [Where things live](#where-things-live)),
-so they show up in the sample browser. Set `output_dir` to an absolute path to put them elsewhere.
+Files are named `Skipback_YYYYMMDD_HHMMSS.wav` and go in a `Skipback` folder. With `output_dir=auto` (the default) the
+addin picks, at save time, the first of these that exists and is writable:
 
-`tools/device_test.sh` (copy it to the device) does the steps above and prints the file's size.
+1. **a USB drive or SSD**, as `<drive>/Skipback`, or inside the drive's own `Force`, `MPC` or `APC Documents/Samples`
+   folder if it has one;
+2. **an external SD card**, the same way;
+3. **this device's own Samples folder**, found in MPC's settings (the browser shortcut that ends in `/Samples`, else
+   the Samples folder beside a recent project's Projects folder, else a `Force`, `MPC` or `APC Documents/Samples` folder
+   on the SD card, else `/data/Skipback`).
 
-## Where things live
+Plugging in a drive moves new recordings there; unplugging it moves them back. `output_dir=samples` skips the drives.
+An absolute path (`output_dir=/media/<drive>/Skipback`) is used as it is: if that drive is not mounted when you save, the
+save fails with an `error` instead of going somewhere else. A 30-second WAV is about 8 MB.
 
-- **The addin itself** is always installed on the internal storage, in `/data/mpc-addins/skipback/` (the library,
-  `skipback.conf` and `skipback.log`). It is loaded into MPC as it starts, before the SD card or a USB drive may be
-  mounted, and the system disk is read-only, so the SD card and USB drives are not options for the install.
-- **The recordings** go wherever `output_dir` says. With `auto` (the default) the addin picks, each time it saves,
-  the first of these that exists and is writable:
-  1. **a USB drive or SSD** (a mounted `/dev/sd*` volume), as `<drive>/Skipback`, or inside the drive's own
-     `Force`, `MPC` or `APC Documents/Samples` folder if it has one;
-  2. **an external SD card** (a mounted `/dev/mmcblk1` or higher; `mmcblk0` is the internal flash), the same way;
-  3. **the device's own Samples folder**, from `MPC.settings`: the browser shortcut that ends in `/Samples` (on the Force
-     used for testing: `/sdcard/Force Documents/Samples`), else the Samples folder next to the Projects folder of a recent
-     project, else a `Force`, `MPC` or `APC Documents/Samples` folder on the SD card, else `/data/Skipback`.
+### Settings
 
-  Because the drive is checked at save time, plugging in an SSD moves the recordings there and unplugging it moves them
-  back; the log says where each one went. `output_dir=samples` skips the drives (only 3). An absolute path is used as
-  it is: if that drive is not mounted when you save, the save fails with an `error` in the `done` file. A WAV is about
-  8 MB for 30 s.
-- Only the Force has been checked. The drive rules assume the internal flash is `mmcblk0`; the MPC models have not been checked.
+`/data/mpc-addins/skipback/skipback.conf`, one `key=value` per line, read **when MPC starts** (restart MPC after
+editing). `etc/skipback.conf.example` in this repo lists every key with its explanation.
 
-## Settings
-
-`/data/mpc-addins/skipback/skipback.conf`, read when MPC starts. `etc/skipback.conf.example` documents every key.
-
-| Key | Default | |
+| Key | Default | What it does |
 |---|---|---|
 | `enabled` | `1` | `0` leaves the library loaded but idle |
 | `window_sec` | `30` | seconds saved per trigger, 1 to 60 |
-| `output_dir` | `auto` | where the WAVs go: `auto` = SSD, else SD card, else this device's Samples folder; `samples` = the last only; or an absolute path |
-| `trigger` / `done` | `/tmp/mpc-addin-skipback.{trigger,done}` | the two marker files |
-| `button` | `93` | controller button (channel-1 note) whose double press saves; 93 is Rec Arm on a Force, 73 is Rec; `0` = off |
-| `double_ms` | `350` | two presses within this are a double press |
-| `led`, `led_button`, `led_on`, `led_blinks`, `led_ms` | `1`, `auto`, `3`, `3`, `120` | the done blink: which LED (auto = the button), the lit value, how many times, how long each half |
-| `midi_log` | `0` | log controller presses and every LED change MPC makes, to find LED values on another model |
-| `click` | `0` | click through main out after a save |
-| `left` / `right` | `0` / `1` | channels of MPC's playback stream that carry main out |
+| `button` | `93` | controller button (a channel-1 note) whose double press saves; 93 is Rec Arm on a Force, 73 is Rec; `0` turns the button off and leaves the trigger file |
+| `double_ms` | `350` | two presses within this many milliseconds are a double press |
+| `output_dir` | `auto` | `auto` (SSD, else SD card, else Samples folder), `samples` (Samples folder only) or an absolute path |
+| `led` | `1` | `0` turns the LED feedback off |
+| `led_button` | `auto` | which LED blinks (a button number); `auto` = the same button |
+| `led_fast_blinks`, `led_fast_ms` | `3`, `50` | the quick flashes: how many, and the length of each half in ms (`0` blinks = none) |
+| `led_blinks`, `led_ms` | `3`, `250` | the slow flashes |
+| `led_on` | `3` | the LED value of the lit half of a flash (the Force's Rec Arm shows 3 as lit) |
+| `click` | `0` | `1` also plays a short click through main out when a save finishes (it is not recorded) |
+| `trigger`, `done` | `/tmp/mpc-addin-skipback.{trigger,done}` | the two marker files |
+| `left`, `right` | `0`, `1` | channels of MPC's output stream that carry main out |
 | `tap_card` | `auto` | the codec's ALSA card |
-| `poll_ms` | `100` | how often the trigger is looked for |
-| `log` | `auto` | `skipback.log` in the addin folder; empty for none |
+| `poll_ms` | `100` | how often the trigger file is looked for |
+| `midi_log` | `0` | `1` logs controller presses and every LED change MPC makes, for finding button numbers and LED values on another model. It writes a lot; turn it off afterwards |
+| `log` | `auto` | `skipback.log` in the addin folder; an absolute path, or empty for none |
+
+### Other models
+
+The button and LED logic reads MPC's controller port, and the numbers differ per model. On a model other than the Force:
+
+1. Set `midi_log=1`, restart MPC, press the button you want and read `skipback.log`: a press shows as
+   `controller in: 90 <note> 7F`.
+2. Set `button` to that note, and `led_on` to the value MPC uses for the lit LED (the log lists every LED change as
+   `led <button> = <value>`).
+3. Set `midi_log=0` again.
+
+If your model has no suitable button or LED, set `button=0` and use the trigger file (for example from a button
+remap tool). Please report what you find.
+
+### Turning it off or removing it
+
+- `enabled=0` in `skipback.conf` (and restart MPC) leaves it loaded but idle.
+- `sh /data/mpc-addins/skipback/uninstall.sh` removes it. It also deletes `skipback.conf`; your recordings are kept.
 
 ## Troubleshooting
 
-- **Nothing happens on trigger:** read `skipback.log`. It should say `active`, then `playback: 4 ch, format …, 44100 Hz`.
-  No `playback` line means MPC hasn't opened its output yet (play something) or the stream isn't what the addin
-  expects; the log says what it saw.
-- **`error no audio yet`:** the output stream hasn't started since MPC started.
-- **WAV sounds wrong or silent:** main out may not be channels 0/1 on your model; try other `left`/`right` pairs.
-- **MPC won't start after installing:** SSH is still up. See the addin guide linked above, or
-  `sh /data/mpc-addins/skipback/uninstall.sh -y -n` with MPC stopped (`systemctl stop acvs`).
+- **Nothing happens on a double press.** Open `/data/mpc-addins/skipback/skipback.log`. It should show `active`, then
+  `controller input hooked` and `playback: ... Hz`. No `controller input hooked` line means the button logic could not find
+  the controller port (use the trigger file meanwhile). If `button 93 pressed twice` appears but nothing is saved, the
+  next lines say why.
+- **`error no audio yet`.** MPC has not opened its output since it started; play something, then try again.
+- **The WAV is silent or one-sided.** Main out may not be channels 0/1 on your model: try other `left`/`right` pairs.
+- **It saved somewhere unexpected.** The log line for each save gives the folder, and which drive is picked is explained
+  under [Where the files go](#where-the-files-go). Set `output_dir` to choose.
+- **MPC won't start after installing.** SSH stays up. Run `sh /data/mpc-addins/skipback/uninstall.sh -y -n` with MPC stopped
+  (`systemctl stop acvs`), then start it again; the addin guide has the full recovery steps.
+- **With MockbaMod.** MockbaMod diverts the controller, so the button logic may not see presses; use the trigger file. The
+  installer also notices an old MockbaMod `run_skipback.sh` add-on and says so: run only one of the two.
 
-## Not verified yet
+## Status
 
-- Models other than the Force: the playback stream, the main-out channels, the button numbers and the LED values.
-- On the Force: that a save during heavy playback doesn't disturb the audio, and that the LED goes back to the state
-  MPC had set (Rec Arm's own LED was not written by MPC during the test, so it is restored to off).
-- The default folder outside a Force (`/sdcard/Skipback` is a guess).
-- Project name and tempo in the file name (the old Force version had them).
+Works on an Akai Force (MPC 3.9.1, 2026-10-10): the double press, the saves (to the SD card, then to a USB drive), the
+LED flashes and the settings were all used on a real device. The other models are untested, in particular the button and LED
+numbers, which MPC chooses per model. The offline tests (x86, ASan/UBSan, against a fake audio library and a fake MIDI
+port) cover everything but the device itself.
+
+Known limits:
+
+- **Memory.** The rolling buffer is sized for the largest window at the highest sample rate and grows to about 48 MB of RAM
+  over the first couple of minutes whatever `window_sec` is.
+- **Second press.** The second press of the double press also reaches MPC, so with Rec Arm the arm state toggles twice.
+- **Slow cards.** A save takes 2 to 5 seconds on the Force's SD card; the LED waits for it. The audio is not affected.
+- **Failed saves** show quick flashes only; the reason is in `done` and the log.
+- **Project name and tempo** are not in the file name (the older Force-only version, in
+  [force-audio-jack](https://github.com/sd88me/force-audio-jack), had them).
+
+## How it works
+
+- **Audio.** The addin hooks `snd_pcm_open`, `snd_pcm_hw_params`, `snd_pcm_writei` and `snd_pcm_writen` on the codec's
+  playback stream, the technique of [mpc-addin-usb-audio](https://github.com/jacob-sabella/mpc-addin-usb-audio). Two
+  channels of every block MPC plays are copied into a ring buffer. A short write is rewound, so a retried write never
+  duplicates audio.
+- **Button.** MPC reads the controller from a rawmidi port with "Private" in its name (note-on, channel 1). The addin hooks
+  `snd_rawmidi_read` on it and only looks at the bytes; nothing is changed, so it works with or without a button remap
+  tool such as [akai_standalone_remap](https://github.com/mmiroshnikov/akai_standalone_remap).
+- **LED.** MPC sets a button LED by writing a control change on channel 1 to the same port (controller = button, value =
+  state), only when it changes. The addin remembers the last value of each and, after a blink, writes that value back.
+  (The format is described in TheKikGen's
+  [MPCLiveXplore-libs](https://github.com/TheKikGen/MPCLiveXplore-libs).)
+- **Save.** A separate thread copies the newest window out of the ring and writes the WAV to `.tmp`, then renames it. It
+  starts at the first playback `hw_params`, not in the library constructor, because a thread started that early crashed MPC
+  in a sister addin.
 
 ## Build and test
 
 ```sh
-tools/test_host.sh       # x86, ASan + UBSan: unit tests, and the addin in front of a fake libasound
+tools/test_host.sh       # x86, ASan + UBSan: unit tests, and the addin in front of a fake libasound / rawmidi
 tools/build_armhf.sh     # Docker arm/v7: glibc <= 2.31, no libasound dependency, only the expected exports
+tools/device_test.sh     # on the device: triggers a save the way a script would and prints the result
 ```
 
 Package with `tools/release_addin.py` from [mpc-vst-plugins](https://github.com/sd88me/mpc-vst-plugins), then
-`catalog_check.py --catalog`.
+`catalog_check.py --catalog`. The settings file, installer and release layout are described in that repo's `docs/ADDINS.md`.
 
-## How the button and LED work
+## Credits
 
-MPC reads the Force's buttons from a rawmidi port with "Private" in its name (note-on, channel 1; the same port the
-[button remap](https://github.com/mmiroshnikov/akai_standalone_remap) shim hooks). The addin hooks `snd_rawmidi_read`
-on it and only looks at the bytes: nothing is changed, so it works with or without a remap tool. MPC sets button LEDs
-by writing a control change on channel 1 to the same port (controller = button, value = state); the addin remembers
-the last value of each and, for the done blink, writes the blink and then that value back.
-
-## How it works
-
-The audio thread copies two channels of MPC's `snd_pcm_writei`/`writen` data into a lock-free ring: no lock, no
-allocation, no system call. A separate thread polls for the trigger, copies the newest window out and writes the WAV
-(to `.tmp`, then renamed). That thread starts at the first playback `hw_params`, not in the library constructor,
-because a thread started that early crashed MPC in a sister addin. A short write is rewound so a retried write never
-duplicates audio.
+Built by [sd88me](https://github.com/sd88me). The in-process audio hook follows
+[mpc-addin-usb-audio](https://github.com/jacob-sabella/mpc-addin-usb-audio) by Jacob Sabella; the Force's LED protocol
+is from TheKikGen's [MPCLiveXplore-libs](https://github.com/TheKikGen/MPCLiveXplore-libs). The Skipback idea and the first
+Force version come from [force-audio-jack](https://github.com/sd88me/force-audio-jack).
 
 ## License
 
