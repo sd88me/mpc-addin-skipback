@@ -1,5 +1,7 @@
 # MPC Skipback
 
+![MPC Skipback: double-press a button to save the last 30-60 seconds](docs/img/skipback.png)
+
 An addin for Akai MPC OS standalone devices (MPC Live, One, X, Key and Force) that records the main output
 all the time and, when you ask, saves the **last 30 seconds** as a WAV file: the take you didn't know you wanted
 until it was over.
