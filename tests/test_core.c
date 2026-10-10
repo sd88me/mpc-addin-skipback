@@ -116,18 +116,44 @@ int main(void) {
     snprintf(d, sizeof d, "<VALUE name=\"folder1\" val=\"%s/gone/Samples\"/>\n<VALUE name=\"folder2\" val=\"%s/Thing/Projects\"/>\n"
                           "<VALUE name=\"folder3\" val=\"%s/other Documents/Samples\"/>\n", root, root, root);
     write_file(st, d);
-    sb_resolve_output_dir(&c3, st, o, sizeof o);
+    sb_resolve_output_dir(&c3, st, "/nonexistent/mounts", o, sizeof o);
     snprintf(d, sizeof d, "%s/other Documents/Samples/Skipback", root); CHECK(!strcmp(o, d));
     /* no shortcut: the Samples folder beside the Projects folder of a recent project */
     snprintf(d, sizeof d, "<VALUE name=\"recentProject1\" val=\"%s/nowhere/Projects/a.xpj\"/>\n<VALUE name=\"recentProject2\" val=\"%s/Thing/Projects/b.xpj\"/>\n", root, root);
     write_file(st, d);
-    sb_resolve_output_dir(&c3, st, o, sizeof o);
+    sb_resolve_output_dir(&c3, st, "/nonexistent/mounts", o, sizeof o);
     snprintf(d, sizeof d, "%s/Thing/Samples/Skipback", root); CHECK(!strcmp(o, d));
     /* nothing usable (no settings file): a fixed fallback; an explicit folder is taken as it is */
-    sb_resolve_output_dir(&c3, "/nonexistent/MPC.settings", o, sizeof o);
+    sb_resolve_output_dir(&c3, "/nonexistent/MPC.settings", "/nonexistent/mounts", o, sizeof o);
     CHECK(!strcmp(o, "/sdcard/Force Documents/Samples/Skipback") || !strcmp(o, "/sdcard/MPC Documents/Samples/Skipback") ||
           !strcmp(o, "/sdcard/APC Documents/Samples/Skipback") || !strcmp(o, "/data/Skipback"));
-    snprintf(c3.output_dir, sizeof c3.output_dir, "/x/y"); sb_resolve_output_dir(&c3, st, o, sizeof o); CHECK(!strcmp(o, "/x/y"));
+    snprintf(c3.output_dir, sizeof c3.output_dir, "/x/y"); sb_resolve_output_dir(&c3, st, "/nonexistent/mounts", o, sizeof o); CHECK(!strcmp(o, "/x/y"));
+
+    /* drives: an SSD first, then an external SD card, then the Samples folder; internal flash and tmpfs are never taken */
+    char mt[400], ssd[400], sd[400], exp[2000];
+    snprintf(mt, sizeof mt, "%s/mounts", dir);
+    snprintf(ssd, sizeof ssd, "%s/my ssd", root); snprintf(sd, sizeof sd, "%s/sdcard", root);
+    CHECK_EQ(sb_mkdir_p(ssd), 0); CHECK_EQ(sb_mkdir_p(sd), 0);
+    sb_cfg_defaults(&c3);
+    snprintf(exp, sizeof exp, "/dev/mmcblk0p8 %s/Thing ext4 rw 0 0\ntmpfs %s/Thing tmpfs rw 0 0\n/dev/mmcblk1p1 %s ext4 rw 0 0\n/dev/sda1 %s/my\\040ssd exfat rw 0 0\n", root, root, sd, root);
+    write_file(mt, exp);
+    sb_resolve_output_dir(&c3, st, mt, o, sizeof o);
+    snprintf(d, sizeof d, "%s/my ssd/Skipback", root); CHECK(!strcmp(o, d));                    /* the SSD beats the SD card */
+    snprintf(d, sizeof d, "%s/Force Documents/Samples", ssd); CHECK_EQ(sb_mkdir_p(d), 0);
+    sb_resolve_output_dir(&c3, st, mt, o, sizeof o);
+    snprintf(d, sizeof d, "%s/Force Documents/Samples/Skipback", ssd); CHECK(!strcmp(o, d));    /* its own Samples folder if it has one */
+    snprintf(c3.output_dir, sizeof c3.output_dir, "samples");
+    sb_resolve_output_dir(&c3, st, mt, o, sizeof o);
+    snprintf(d, sizeof d, "%s/Thing/Samples/Skipback", root); CHECK(!strcmp(o, d));            /* "samples" ignores drives */
+    snprintf(c3.output_dir, sizeof c3.output_dir, "auto");
+    snprintf(exp, sizeof exp, "/dev/mmcblk0p8 %s/Thing ext4 rw 0 0\n/dev/mmcblk1p1 %s ext4 rw 0 0\n/dev/sda1 %s/gone exfat rw 0 0\n", root, sd, root);
+    write_file(mt, exp);                                                                        /* the SSD's mount point is missing */
+    sb_resolve_output_dir(&c3, st, mt, o, sizeof o);
+    snprintf(d, sizeof d, "%s/sdcard/Skipback", root); CHECK(!strcmp(o, d));                    /* so the SD card */
+    snprintf(exp, sizeof exp, "/dev/mmcblk0p8 %s/Thing ext4 rw 0 0\ntmpfs /tmp tmpfs rw 0 0\n", root);
+    write_file(mt, exp);                                                                        /* no external drive at all */
+    sb_resolve_output_dir(&c3, st, mt, o, sizeof o);
+    snprintf(d, sizeof d, "%s/Thing/Samples/Skipback", root); CHECK(!strcmp(o, d));
   }
 
   /* controller MIDI: double press of button 93 */

@@ -82,7 +82,7 @@ int sb_cfg_load(sb_cfg *c, const char *path, char *err, size_t errn) {
       unsigned u;
       if (!strcmp(k, "enabled")) { if (!parse_uint(v, 0, 1, &u)) { c->enabled = (int)u; rc = 0; } }
       else if (!strcmp(k, "window_sec")) { if (!parse_uint(v, 1, SB_MAX_WINDOW_SEC, &u)) { c->window_sec = u; rc = 0; } }
-      else if (!strcmp(k, "output_dir")) rc = strcmp(v, "auto") ? set_str(c->output_dir, sizeof c->output_dir, v, 1) : set_str(c->output_dir, sizeof c->output_dir, v, 0);
+      else if (!strcmp(k, "output_dir")) rc = strcmp(v, "auto") && strcmp(v, "samples") ? set_str(c->output_dir, sizeof c->output_dir, v, 1) : set_str(c->output_dir, sizeof c->output_dir, v, 0);
       else if (!strcmp(k, "trigger")) rc = v[0] ? set_str(c->trigger, sizeof c->trigger, v, 1) : -1;
       else if (!strcmp(k, "done")) rc = v[0] ? set_str(c->done, sizeof c->done, v, 1) : -1;
       else if (!strcmp(k, "log")) rc = !strcmp(v, "auto") ? set_str(c->log, sizeof c->log, v, 0) : set_str(c->log, sizeof c->log, v, 1);
@@ -333,8 +333,7 @@ static int ends_with(const char *s, const char *suffix) {
   return a >= b && !strcmp(s + a - b, suffix);
 }
 
-void sb_resolve_output_dir(const sb_cfg *c, const char *settings_path, char *out, size_t n) {
-  if (strcmp(c->output_dir, "auto")) { snprintf(out, n, "%s", c->output_dir); return; }
+static void samples_dir(const char *settings_path, char *out, size_t n) {
   char samples[320] = "", from_recent[320] = "", v[300];
   FILE *f = settings_path ? fopen(settings_path, "re") : NULL;
   if (f) {
@@ -359,6 +358,53 @@ void sb_resolve_output_dir(const sb_cfg *c, const char *settings_path, char *out
   }
   if (samples[0]) snprintf(out, n, "%s/Skipback", samples);
   else snprintf(out, n, "/data/Skipback");
+}
+
+/* A drive's mount point from /proc/mounts: the first writable one whose device is a USB/SSD volume (usb = 1: /dev/sd*)
+ * or an external SD card (usb = 0: /dev/mmcblk<n> with n > 0). Paths in /proc/mounts escape a space as \040. */
+static int find_drive(const char *mounts_path, int usb, char *mnt, size_t n) {
+  FILE *f = fopen(mounts_path, "re");
+  if (!f) return 0;
+  char line[1024];
+  int found = 0;
+  while (!found && fgets(line, sizeof line, f)) {
+    char dev[300], dir[400];
+    if (sscanf(line, "%299s %399s", dev, dir) != 2) continue;
+    int is_usb = !strncmp(dev, "/dev/sd", 7);
+    int is_sd = !strncmp(dev, "/dev/mmcblk", 11) && dev[11] >= '1' && dev[11] <= '9';
+    if (usb ? !is_usb : !is_sd) continue;
+    char *w = dir;                                  /* decode \040 in place */
+    for (const char *r = dir; *r; r++) {
+      if (r[0] == '\\' && r[1] == '0' && r[2] == '4' && r[3] == '0') { *w++ = ' '; r += 3; }
+      else *w++ = *r;
+    }
+    *w = 0;
+    if (!is_dir(dir) || access(dir, W_OK) != 0 || strlen(dir) >= n) continue;
+    snprintf(mnt, n, "%s", dir);
+    found = 1;
+  }
+  fclose(f);
+  return found;
+}
+
+/* <drive>/<product> Documents/Samples/Skipback when the drive has such a Samples folder, else <drive>/Skipback. */
+static void drive_dir(const char *mnt, char *out, size_t n) {
+  static const char *const docs[] = { "Force Documents", "MPC Documents", "APC Documents" };
+  char p[600];
+  for (size_t i = 0; i < sizeof docs / sizeof *docs; i++) {
+    if (snprintf(p, sizeof p, "%s/%s/Samples", mnt, docs[i]) < (int)sizeof p && is_dir(p)) { snprintf(out, n, "%s/Skipback", p); return; }
+  }
+  snprintf(out, n, "%s/Skipback", mnt);
+}
+
+void sb_resolve_output_dir(const sb_cfg *c, const char *settings_path, const char *mounts_path, char *out, size_t n) {
+  if (strcmp(c->output_dir, "auto") && strcmp(c->output_dir, "samples")) { snprintf(out, n, "%s", c->output_dir); return; }
+  char mnt[400];
+  if (!strcmp(c->output_dir, "auto") && mounts_path && (find_drive(mounts_path, 1, mnt, sizeof mnt) || find_drive(mounts_path, 0, mnt, sizeof mnt))) {
+    drive_dir(mnt, out, n);
+    return;
+  }
+  samples_dir(settings_path, out, n);
 }
 
 int sb_mkdir_p(const char *dir) {

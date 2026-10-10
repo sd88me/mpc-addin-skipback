@@ -214,7 +214,9 @@ static int save_now(void) {
   const char *settings = getenv("MPC_SKIPBACK_SETTINGS");
   if (!settings || !*settings) settings = access("/data/Settings/MPC/MPC.settings", R_OK) == 0 ? "/data/Settings/MPC/MPC.settings"
                                                                                      : "/media/az01-internal/Settings/MPC/MPC.settings";
-  sb_resolve_output_dir(&G.cfg, settings, dir, sizeof dir);
+  const char *mounts = getenv("MPC_SKIPBACK_MOUNTS");
+  if (!mounts || !*mounts) mounts = "/proc/mounts";
+  sb_resolve_output_dir(&G.cfg, settings, mounts, dir, sizeof dir);
   int rc = n ? sb_mkdir_p(dir) : -ENODATA;
   if (!rc) {
     sb_make_path(dir, (long)time(NULL), path, sizeof path);

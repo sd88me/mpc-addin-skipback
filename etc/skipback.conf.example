@@ -7,10 +7,11 @@ enabled=1
 # (30 s is about 10 MB).
 window_sec=30
 
-# Where the WAVs go. "auto": a Skipback folder inside this device's own Samples folder, found in MPC's settings
-# (the browser shortcut that ends in /Samples, else the Samples folder beside a recent project's Projects folder,
-# else /sdcard/<Force|MPC|APC> Documents/Samples, else /data/Skipback). Or an absolute path, which is used as it is
-# (the folder is created): another drive's path works as long as it is mounted when you save.
+# Where the WAVs go, in a Skipback folder. "auto" takes the first that is there at save time:
+#   1. a mounted USB drive or SSD (writable),  2. a mounted external SD card (writable),
+#   3. this device's own Samples folder (as MPC's settings name it, else <Force|MPC|APC> Documents/Samples, else /data/Skipback).
+# A drive that has its own "<Force|MPC|APC> Documents/Samples" folder is used there, otherwise at its top level.
+# "samples" is 3 only. Or an absolute path, used as it is (the folder is created).
 output_dir=auto
 
 # A save starts when this file appears; the addin deletes it. Touch it from anything: a button

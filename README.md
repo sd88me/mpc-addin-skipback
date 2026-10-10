@@ -74,14 +74,20 @@ so they show up in the sample browser. Set `output_dir` to an absolute path to p
 - **The addin itself** is always installed on the internal storage, in `/data/mpc-addins/skipback/` (the library,
   `skipback.conf` and `skipback.log`). It is loaded into MPC as it starts, before the SD card or a USB drive may be
   mounted, and the system disk is read-only, so the SD card and USB drives are not options for the install.
-- **The recordings** go wherever `output_dir` says. With `auto` the addin asks MPC where *this* device keeps its
-  samples, each time it saves, from `MPC.settings`: the browser shortcut that ends in `/Samples` (on the Force used for
-  testing: `/sdcard/Force Documents/Samples`), else the Samples folder next to the Projects folder of a recent
-  project, else a `Force`, `MPC` or `APC Documents/Samples` folder on the SD card, else `/data/Skipback`. A WAV is
-  about 8 MB for 30 s. To record onto a USB drive or SSD, set `output_dir` to a path on it, for example
-  `/media/<drive id>/Skipback`: if the drive is not mounted when you save, the save fails with an `error` in the
-  `done` file rather than going somewhere else.
-- Only the Force has been checked; the `auto` rules for the MPC models are untested.
+- **The recordings** go wherever `output_dir` says. With `auto` (the default) the addin picks, each time it saves,
+  the first of these that exists and is writable:
+  1. **a USB drive or SSD** (a mounted `/dev/sd*` volume), as `<drive>/Skipback`, or inside the drive's own
+     `Force`, `MPC` or `APC Documents/Samples` folder if it has one;
+  2. **an external SD card** (a mounted `/dev/mmcblk1` or higher; `mmcblk0` is the internal flash), the same way;
+  3. **the device's own Samples folder**, from `MPC.settings`: the browser shortcut that ends in `/Samples` (on the Force
+     used for testing: `/sdcard/Force Documents/Samples`), else the Samples folder next to the Projects folder of a recent
+     project, else a `Force`, `MPC` or `APC Documents/Samples` folder on the SD card, else `/data/Skipback`.
+
+  Because the drive is checked at save time, plugging in an SSD moves the recordings there and unplugging it moves them
+  back; the log says where each one went. `output_dir=samples` skips the drives (only 3). An absolute path is used as
+  it is: if that drive is not mounted when you save, the save fails with an `error` in the `done` file. A WAV is about
+  8 MB for 30 s.
+- Only the Force has been checked. The drive rules assume the internal flash is `mmcblk0`; the MPC models have not been checked.
 
 ## Settings
 
@@ -91,7 +97,7 @@ so they show up in the sample browser. Set `output_dir` to an absolute path to p
 |---|---|---|
 | `enabled` | `1` | `0` leaves the library loaded but idle |
 | `window_sec` | `30` | seconds saved per trigger, 1 to 60 |
-| `output_dir` | `auto` | where the WAVs go: `auto` = `Skipback` inside this device's Samples folder, or an absolute path |
+| `output_dir` | `auto` | where the WAVs go: `auto` = SSD, else SD card, else this device's Samples folder; `samples` = the last only; or an absolute path |
 | `trigger` / `done` | `/tmp/mpc-addin-skipback.{trigger,done}` | the two marker files |
 | `button` | `93` | controller button (channel-1 note) whose double press saves; 93 is Rec Arm on a Force, 73 is Rec; `0` = off |
 | `double_ms` | `350` | two presses within this are a double press |

@@ -87,11 +87,16 @@ uint32_t sb_buf_snapshot(sb_buf *b, int32_t *out, uint32_t want);
 /* 24-bit stereo WAV, written to path.tmp and renamed. Returns 0 or -errno. */
 int sb_wav_write(const char *path, const int32_t *frames, uint32_t n, unsigned rate);
 
-/* Where saves go. An explicit output_dir is used as it is. "auto" is <the device's Samples folder>/Skipback, found
- * from MPC's own settings file (settings_path): a browser shortcut (folder1.. in MPC.settings) that ends in /Samples,
- * else the Samples folder next to the Projects folder of a recent project, else /sdcard/<Force|MPC|APC> Documents/Samples,
- * else /data/Skipback. Only folders that exist are taken. */
-void sb_resolve_output_dir(const sb_cfg *c, const char *settings_path, char *out, size_t n);
+/* Where saves go. An explicit output_dir is used as it is. "auto" takes the first of:
+ *   1. a mounted USB drive or SSD (/dev/sd*) that is writable,
+ *   2. a mounted external SD card (/dev/mmcblk1 and up; mmcblk0 is the internal flash) that is writable,
+ *   3. the device's own Samples folder (what "samples" gives),
+ * each as <drive>/<Force|MPC|APC> Documents/Samples/Skipback if the drive has that Samples folder, else <drive>/Skipback.
+ * "samples" is only 3: <Samples folder>/Skipback, found from MPC's settings file: a browser shortcut (folder1.. in
+ * MPC.settings) that ends in /Samples, else the Samples folder next to the Projects folder of a recent project, else
+ * /sdcard/<Force|MPC|APC> Documents/Samples, else /data/Skipback. Only folders that exist are taken.
+ * mounts_path is /proc/mounts (a file in the test). */
+void sb_resolve_output_dir(const sb_cfg *c, const char *settings_path, const char *mounts_path, char *out, size_t n);
 /* out_dir/Skipback_YYYYMMDD_HHMMSS.wav (local time of `t`; a suffix _2, _3 ... if the file exists). */
 void sb_make_path(const char *dir, long t, char *out, size_t n);
 int sb_mkdir_p(const char *dir);
