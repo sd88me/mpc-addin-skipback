@@ -182,7 +182,24 @@ int main(void) {
     CHECK_EQ(sb_led_feed(&lv, cc, 3), 0);
     const uint8_t off[] = { 93, 0 };                                    /* running status */
     CHECK_EQ(sb_led_feed(&lv, off, sizeof off), 1); CHECK_EQ(lv.val[93], 0); CHECK_EQ(lv.changed_btn, 93);
-    sb_cfg c2; sb_cfg_defaults(&c2); CHECK_EQ(c2.button, 93); CHECK_EQ(c2.led_button, -1);
+    sb_cfg c2; sb_cfg_defaults(&c2); CHECK_EQ(c2.button_mode, SB_BTN_AUTO); CHECK_EQ(c2.led, -1); CHECK_EQ(c2.led_button, -1);
+    {
+      char cf[600]; snprintf(cf, sizeof cf, "%s/b.conf", dir);
+      write_file(cf, "button=learn\nled=auto\n"); CHECK_EQ(sb_cfg_load(&c2, cf, err, sizeof err), 0); CHECK_EQ(c2.button_mode, SB_BTN_LEARN);
+      write_file(cf, "button=61\nled=0\n"); CHECK_EQ(sb_cfg_load(&c2, cf, err, sizeof err), 0); CHECK_EQ(c2.button_mode, SB_BTN_NUM); CHECK_EQ(c2.button, 61); CHECK_EQ(c2.led, 0);
+      write_file(cf, "button=0\n"); CHECK_EQ(sb_cfg_load(&c2, cf, err, sizeof err), 0); CHECK_EQ(c2.button_mode, SB_BTN_NUM); CHECK_EQ(c2.button, 0);
+      write_file(cf, "button=auto\nled=1\n"); CHECK_EQ(sb_cfg_load(&c2, cf, err, sizeof err), 0); CHECK_EQ(c2.button_mode, SB_BTN_AUTO); CHECK_EQ(c2.led, 1);
+      write_file(cf, "button=bogus\nled=2\n"); CHECK_EQ(sb_cfg_load(&c2, cf, err, sizeof err), 2);
+      sb_learn lr; sb_learn_init(&lr, 350);
+      const uint8_t a[] = { 0x90, 60, 0x7f, 0x90, 60, 0 }, b[] = { 0x90, 61, 0x7f, 0x90, 61, 0 }, pad[] = { 0x99, 40, 0x7f, 0x99, 40, 0x7f };
+      CHECK_EQ(sb_learn_feed(&lr, a, sizeof a, 1000), -1);
+      CHECK_EQ(sb_learn_feed(&lr, b, sizeof b, 1100), -1);               /* a different button restarts it */
+      CHECK_EQ(sb_learn_feed(&lr, pad, sizeof pad, 1200), -1);           /* pads (channel 10) never count */
+      CHECK_EQ(sb_learn_feed(&lr, b, sizeof b, 1300), 61);
+      CHECK_EQ(sb_learn_feed(&lr, a, sizeof a, 5000), -1);
+      CHECK_EQ(sb_learn_feed(&lr, a, sizeof a, 6000), -1);               /* too slow */
+      CHECK_EQ(sb_learn_feed(&lr, a, sizeof a, 6100), 60);
+    }
   }
 
   snprintf(p, sizeof p, "rm -rf %s", dir); if (system(p)) {}

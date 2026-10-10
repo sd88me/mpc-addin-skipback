@@ -29,9 +29,10 @@ void sb_cfg_defaults(sb_cfg *c) {
   c->right = 1;
   c->click = 0;
   c->poll_ms = 100;
-  c->button = 93;
+  c->button = 0;
+  c->button_mode = SB_BTN_AUTO;
   c->double_ms = 350;
-  c->led = 1;
+  c->led = -1;
   c->led_button = -1;
   c->led_on = 3;
   c->led_blinks = 3;
@@ -90,9 +91,13 @@ int sb_cfg_load(sb_cfg *c, const char *path, char *err, size_t errn) {
       else if (!strcmp(k, "left")) { if (!parse_uint(v, 0, 31, &u)) { c->left = u; rc = 0; } }
       else if (!strcmp(k, "right")) { if (!parse_uint(v, 0, 31, &u)) { c->right = u; rc = 0; } }
       else if (!strcmp(k, "click")) { if (!parse_uint(v, 0, 1, &u)) { c->click = (int)u; rc = 0; } }
-      else if (!strcmp(k, "button")) { if (!parse_uint(v, 0, 127, &u)) { c->button = u; rc = 0; } }
+      else if (!strcmp(k, "button")) {
+        if (!strcmp(v, "auto")) { c->button_mode = SB_BTN_AUTO; c->button = 0; rc = 0; }
+        else if (!strcmp(v, "learn")) { c->button_mode = SB_BTN_LEARN; c->button = 0; rc = 0; }
+        else if (!parse_uint(v, 0, 127, &u)) { c->button_mode = SB_BTN_NUM; c->button = u; rc = 0; }
+      }
       else if (!strcmp(k, "double_ms")) { if (!parse_uint(v, 100, 2000, &u)) { c->double_ms = u; rc = 0; } }
-      else if (!strcmp(k, "led")) { if (!parse_uint(v, 0, 1, &u)) { c->led = (int)u; rc = 0; } }
+      else if (!strcmp(k, "led")) { if (!strcmp(v, "auto")) { c->led = -1; rc = 0; } else if (!parse_uint(v, 0, 1, &u)) { c->led = (int)u; rc = 0; } }
       else if (!strcmp(k, "led_button")) { if (!strcmp(v, "auto")) { c->led_button = -1; rc = 0; } else if (!parse_uint(v, 0, 127, &u)) { c->led_button = (int)u; rc = 0; } }
       else if (!strcmp(k, "led_on")) { if (!parse_uint(v, 0, 127, &u)) { c->led_on = u; rc = 0; } }
       else if (!strcmp(k, "led_blinks")) { if (!parse_uint(v, 1, 10, &u)) { c->led_blinks = u; rc = 0; } }
@@ -149,6 +154,22 @@ int sb_btn_feed(sb_btn *b, const uint8_t *p, size_t n, long long now_ms) {
   b->doubles = 0;
   sb_mparse_feed(&b->mp, p, n, btn_msg, b);
   return b->doubles;
+}
+
+static void learn_msg(uint8_t st, uint8_t d1, uint8_t d2, void *ctx) {
+  sb_learn *l = ctx;
+  if (st != 0x90 || d2 == 0 || l->learned >= 0) return;
+  if (l->last_note == d1 && l->now_ms - l->last_ms <= (long long)l->dbl_ms) { l->learned = d1; l->last_note = -1; }
+  else { l->last_note = d1; l->last_ms = l->now_ms; }
+}
+
+void sb_learn_init(sb_learn *l, unsigned dbl_ms) { memset(l, 0, sizeof *l); l->last_note = -1; l->learned = -1; l->dbl_ms = dbl_ms; }
+
+int sb_learn_feed(sb_learn *l, const uint8_t *p, size_t n, long long now_ms) {
+  l->now_ms = now_ms;
+  l->learned = -1;
+  sb_mparse_feed(&l->mp, p, n, learn_msg, l);
+  return l->learned;
 }
 
 static void led_msg(uint8_t st, uint8_t d1, uint8_t d2, void *ctx) {

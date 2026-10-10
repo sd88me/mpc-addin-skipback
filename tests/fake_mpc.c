@@ -64,6 +64,7 @@ int main(int argc, char **argv) {
   CHECK_EQ(snd_pcm_hw_params(pcm, &p), 0);
   uint32_t t = 0;
   write_block(pcm, &t, 44100 * 2, 1);          /* 2 s of ramp */
+  unlink(done);                                /* a start after an earlier run in this folder */
   touch(trig);
   char body[600];
   if (!expect_active) {
@@ -146,6 +147,39 @@ int main(int argc, char **argv) {
     usleep(600000); fake_rm_feed(two + 6, 6); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), 6);
     usleep(400000); CHECK(access(done, F_OK) != 0);
     snd_rawmidi_close(in); snd_rawmidi_close(out); snd_rawmidi_close(oin); snd_rawmidi_close(oout);
+  }
+  char mflag[400]; snprintf(mflag, sizeof mflag, "%s/mpc-on", dir);
+  if (access(mflag, F_OK) == 0) {                 /* an MPC (not a Force): Overdub (80) by default, and no LED bytes sent */
+    void *in, *out;
+    fake_rm_private = 2; CHECK_EQ(snd_rawmidi_open(&in, &out, "hw:1,0", 0), 0);
+    unsigned char got[32]; const unsigned char rec[] = { 0x90, 93, 0x7f, 0x90, 93, 0, 0x90, 93, 0x7f, 0x90, 93, 0 };
+    const unsigned char od[] = { 0x90, 80, 0x7f, 0x90, 80, 0, 0x90, 80, 0x7f, 0x90, 80, 0 };
+    unlink(done); fake_rm_feed(rec, sizeof rec); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), (ssize_t)sizeof rec);
+    usleep(400000); CHECK(access(done, F_OK) != 0);                    /* 93 is not its button */
+    fake_rm_feed(od, sizeof od); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), (ssize_t)sizeof od);
+    CHECK_EQ(wait_done(body, sizeof body), 0); CHECK(!strncmp(body, "ok ", 3));
+    usleep(600000); CHECK_EQ(fake_rm_out_n, 0);                         /* led=auto: nothing written to a non-Force controller */
+    snd_rawmidi_close(in); snd_rawmidi_close(out);
+  }
+  char lflag[400]; snprintf(lflag, sizeof lflag, "%s/learn-on", dir);
+  if (access(lflag, F_OK) == 0) {                 /* button=learn: the first button double-pressed is the one */
+    void *in, *out; fake_rm_private = 1; CHECK_EQ(snd_rawmidi_open(&in, &out, "hw:1,0", 0), 0);
+    unsigned char got[32]; char lp[400]; snprintf(lp, sizeof lp, "%s/button.learned", dir);
+    const unsigned char b60[] = { 0x90, 60, 0x7f, 0x90, 60, 0, 0x90, 60, 0x7f, 0x90, 60, 0 };
+    const unsigned char b93[] = { 0x90, 93, 0x7f, 0x90, 93, 0, 0x90, 93, 0x7f, 0x90, 93, 0 };
+    unlink(done); fake_rm_feed(b93, 6); CHECK_EQ(snd_rawmidi_read(in, got, 6), 6);             /* one press of another button first */
+    fake_rm_feed(b60, sizeof b60); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), (ssize_t)sizeof b60);
+    for (int i = 0; i < 100 && access(lp, F_OK) != 0; i++) usleep(20000);
+    CHECK(access(lp, F_OK) == 0);
+    FILE *lf = fopen(lp, "r"); int learned = 0; if (lf) { if (fscanf(lf, "%d", &learned) != 1) learned = -1; fclose(lf); } CHECK_EQ(learned, 60);
+    for (int i = 0; i < 100 && fake_rm_out_n < 21; i++) usleep(20000);
+    CHECK_EQ(fake_rm_out_n, 21);                                         /* the confirmation: 3 slow blinks and the state back */
+    usleep(300000); CHECK(access(done, F_OK) != 0);                      /* learning does not save */
+    fake_rm_feed(b93, sizeof b93); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), (ssize_t)sizeof b93);
+    usleep(400000); CHECK(access(done, F_OK) != 0);                      /* 93 is not the button */
+    fake_rm_feed(b60, sizeof b60); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), (ssize_t)sizeof b60);
+    CHECK_EQ(wait_done(body, sizeof body), 0); CHECK(!strncmp(body, "ok ", 3));      /* the next double press saves */
+    snd_rawmidi_close(in); snd_rawmidi_close(out);
   }
   CHECK_EQ(snd_pcm_close(pcm), 0);
   T_DONE("addin in MPC");

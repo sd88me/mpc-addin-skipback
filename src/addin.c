@@ -74,6 +74,11 @@ static struct {
   sb_buf buf;
   _Atomic(snd_rawmidi_t *) rm_in, rm_out;   /* the controller's Private port, once MPC has opened it */
   sb_btn btn;                         /* read hook only (MPC's MIDI input thread) */
+  sb_learn learn;                     /* ditto; used while learning */
+  int learning;                       /* read hook: the next double-pressed button becomes `button` */
+  int is_force;                       /* the controller port's name says Force */
+  _Atomic int learned_req;            /* note + 1 of a button just learned, for the save thread to confirm and store */
+  char learned_path[200];
   sb_led led;                         /* guarded by wr_lock */
   pthread_mutex_t wr_lock;
   _Atomic int btn_req;                /* the button asked for a save */
@@ -183,11 +188,21 @@ __attribute__((constructor)) static void sb_ctor(void) {
   if (!G.cfg.enabled) { logf_("disabled in settings"); return; }
   if (G.cfg.left == G.cfg.right) { logf_("left and right are the same channel; disabled"); return; }
   G.card = resolve_card();
+  const char *lp = getenv("MPC_SKIPBACK_LEARNED");
+  if (lp && *lp) snprintf(G.learned_path, sizeof G.learned_path, "%s", lp);
+  else snprintf(G.learned_path, sizeof G.learned_path, "%s/button.learned", G.dir[0] ? G.dir : ".");
+  if (G.cfg.button_mode == SB_BTN_LEARN) {
+    FILE *lf = fopen(G.learned_path, "re");
+    unsigned note = 0;
+    if (lf && fscanf(lf, "%u", &note) == 1 && note >= 1 && note <= 127) { G.cfg.button = note; G.cfg.button_mode = SB_BTN_NUM; logf_("button %u, as learned earlier (delete %s to learn again)", note, G.learned_path); }
+    else { G.learning = 1; logf_("learning: double-press the button to use"); }
+    if (lf) fclose(lf);
+  }
   sb_btn_init(&G.btn, G.cfg.button, G.cfg.double_ms);
+  sb_learn_init(&G.learn, G.cfg.double_ms);
   sb_led_init(&G.led);
   G.active = 1;
-  logf_("active: codec card %d, window %u s, channels %u/%u, button %u (double within %u ms), led %s",
-        G.card, G.cfg.window_sec, G.cfg.left, G.cfg.right, G.cfg.button, G.cfg.double_ms, G.cfg.led ? "on" : "off");
+  logf_("active: codec card %d, window %u s, channels %u/%u, double press within %u ms", G.card, G.cfg.window_sec, G.cfg.left, G.cfg.right, G.cfg.double_ms);
 }
 
 /* ---- save thread ----------------------------------------------------------------------------- */
@@ -241,6 +256,9 @@ static void sleep_ms(unsigned ms) {
   nanosleep(&ts, NULL);
 }
 
+/* LED feedback: on when asked for, and by default only on a Force (the one model the LED protocol is known for). */
+static int led_enabled(void) { return G.cfg.led == 1 || (G.cfg.led == -1 && G.is_force); }
+
 /* One LED change on the controller: control change, channel 1, controller = button, value = state. */
 static void led_set(snd_rawmidi_t *out, unsigned button, unsigned value) {
   unsigned char m[3] = { 0xB0, (unsigned char)button, (unsigned char)value };
@@ -253,7 +271,7 @@ static void led_set(snd_rawmidi_t *out, unsigned button, unsigned value) {
 static void led_blink(unsigned n, unsigned ms) {
   snd_rawmidi_t *out = atomic_load(&G.rm_out);
   unsigned btn = G.cfg.led_button >= 0 ? (unsigned)G.cfg.led_button : G.cfg.button;
-  if (!G.cfg.led || !n || !out || btn > 127) return;
+  if (!led_enabled() || !n || !out || btn > 127) return;
   for (unsigned i = 0; i < n; i++) {
     led_set(out, btn, G.cfg.led_on);
     sleep_ms(ms);
@@ -277,6 +295,14 @@ static void *save_thread(void *arg) {
   (void)arg;
   for (;;) {
     sleep_ms(G.cfg.poll_ms);
+    int learned = atomic_exchange(&G.learned_req, 0);
+    if (learned) {                                 /* a button was just learned: remember it, and say so */
+      FILE *lf = fopen(G.learned_path, "we");
+      if (lf) { fprintf(lf, "%d\n", learned - 1); fclose(lf); } else logf_("could not write %s", G.learned_path);
+      logf_("learned button %d", learned - 1);
+      atomic_store(&G.click_req, 1);
+      led_blink(G.cfg.led_blinks, G.cfg.led_ms);
+    }
     int want = atomic_exchange(&G.btn_req, 0);
     if (unlink(G.cfg.trigger) == 0) want = 1;     /* consuming the marker is the trigger: two presses are two saves */
     if (!want) continue;
@@ -378,7 +404,7 @@ EXPORT snd_pcm_sframes_t snd_pcm_writei(snd_pcm_t *pcm, const void *buf, snd_pcm
             G.interleaved && buf && n;
   if (tap) {
     sb_buf_push(&G.buf, buf, NULL, G.fmt, G.ch, G.cfg.left, G.cfg.right, (uint32_t)n);
-    if (G.cfg.click) mix_click((void *)buf, NULL, (uint32_t)n);
+    if (G.cfg.click || atomic_load_explicit(&G.click_req, memory_order_relaxed) || atomic_load_explicit(&G.click_pos, memory_order_relaxed)) mix_click((void *)buf, NULL, (uint32_t)n);
   }
   snd_pcm_sframes_t r = real_writei(pcm, buf, n);
   if (tap && r < (snd_pcm_sframes_t)n) sb_buf_rewind(&G.buf, (uint32_t)(r < 0 ? n : n - (snd_pcm_uframes_t)r));
@@ -392,7 +418,7 @@ EXPORT snd_pcm_sframes_t snd_pcm_writen(snd_pcm_t *pcm, void **bufs, snd_pcm_ufr
             !G.interleaved && bufs && n;
   if (tap) {
     sb_buf_push(&G.buf, NULL, bufs, G.fmt, G.ch, G.cfg.left, G.cfg.right, (uint32_t)n);
-    if (G.cfg.click) mix_click(NULL, bufs, (uint32_t)n);
+    if (G.cfg.click || atomic_load_explicit(&G.click_req, memory_order_relaxed) || atomic_load_explicit(&G.click_pos, memory_order_relaxed)) mix_click(NULL, bufs, (uint32_t)n);
   }
   snd_pcm_sframes_t r = real_writen(pcm, bufs, n);
   if (tap && r < (snd_pcm_sframes_t)n) sb_buf_rewind(&G.buf, (uint32_t)(r < 0 ? n : n - (snd_pcm_uframes_t)r));
@@ -407,18 +433,21 @@ static long long now_ms(void) {
   return (long long)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
-/* Same test as the button remap shim: the port's name or subdevice name has "Private" in it. */
-static int is_private(snd_rawmidi_t *h) {
+/* Same test as the button remap shim: the port's name or subdevice name has "Private" in it. The names go to `names`
+ * (device / subdevice) for the log and for telling a Force from the rest. */
+static int is_private(snd_rawmidi_t *h, char *names, size_t nn) {
   size_t (*info_sizeof)(void) = dlsym(RTLD_DEFAULT, "snd_rawmidi_info_sizeof");
   int (*info)(snd_rawmidi_t *, snd_rawmidi_info_t *) = dlsym(RTLD_DEFAULT, "snd_rawmidi_info");
   const char *(*subname)(const snd_rawmidi_info_t *) = dlsym(RTLD_DEFAULT, "snd_rawmidi_info_get_subdevice_name");
   const char *(*devname)(const snd_rawmidi_info_t *) = dlsym(RTLD_DEFAULT, "snd_rawmidi_info_get_name");
   int found = 0;
+  if (names && nn) names[0] = 0;
   if (!info_sizeof || !info || !subname || !devname) return 0;
   snd_rawmidi_info_t *ri = calloc(1, info_sizeof());
   if (ri && info(h, ri) == 0) {
     const char *sn = subname(ri), *dn = devname(ri);
     found = (sn && strstr(sn, "Private")) || (dn && strstr(dn, "Private"));
+    if (names && nn) snprintf(names, nn, "'%s' / '%s'", dn ? dn : "", sn ? sn : "");
   }
   free(ri);
   return found;
@@ -428,13 +457,18 @@ EXPORT int snd_rawmidi_open(snd_rawmidi_t **in, snd_rawmidi_t **out, const char 
   if (!real_rm_open) resolve_reals();
   if (!real_rm_open) return -ENOSYS;
   int r = real_rm_open(in, out, name, mode);
-  if (r != 0 || !G.active || !G.cfg.button) return r;
-  if (in && *in && is_private(*in)) {
+  if (r != 0 || !G.active || (G.cfg.button_mode == SB_BTN_NUM && !G.cfg.button)) return r;
+  char names[160];
+  if (in && *in && is_private(*in, names, sizeof names)) {
+    G.is_force = strstr(names, "Force") != NULL;
+    if (G.cfg.button_mode == SB_BTN_AUTO) { G.cfg.button = G.is_force ? SB_FORCE_BUTTON : SB_MPC_BUTTON; G.cfg.button_mode = SB_BTN_NUM; }
     sb_btn_init(&G.btn, G.cfg.button, G.cfg.double_ms);
+    sb_learn_init(&G.learn, G.cfg.double_ms);
     atomic_store(&G.rm_in, *in);
-    logf_("controller input hooked (%s)", name ? name : "?");
+    if (G.learning) logf_("controller input hooked (%s %s): double-press the button you want to use", name ? name : "?", names);
+    else logf_("controller input hooked (%s %s): button %u, double press within %u ms, led %s", name ? name : "?", names, G.cfg.button, G.cfg.double_ms, led_enabled() ? "on" : "off");
   }
-  if (out && *out && is_private(*out)) {
+  if (out && *out && is_private(*out, names, sizeof names)) {
     pthread_mutex_lock(&G.wr_lock);
     sb_led_init(&G.led);                 /* MPC sends every LED again after opening */
     pthread_mutex_unlock(&G.wr_lock);
@@ -472,7 +506,15 @@ EXPORT ssize_t snd_rawmidi_read(snd_rawmidi_t *h, void *buf, size_t size) {
   ssize_t r = real_rm_read(h, buf, size);
   if (r > 0 && G.active && h == atomic_load_explicit(&G.rm_in, memory_order_relaxed)) {
     if (G.cfg.midi_log && r <= 8) log_hex("controller in:", buf, (size_t)r);
-    if (sb_btn_feed(&G.btn, buf, (size_t)r, now_ms())) {
+    if (G.learning) {
+      int note = sb_learn_feed(&G.learn, buf, (size_t)r, now_ms());
+      if (note >= 0) {                      /* this double press only teaches; the next one saves */
+        G.cfg.button = (unsigned)note;
+        G.learning = 0;
+        sb_btn_init(&G.btn, G.cfg.button, G.cfg.double_ms);
+        atomic_store(&G.learned_req, note + 1);
+      }
+    } else if (G.cfg.button && sb_btn_feed(&G.btn, buf, (size_t)r, now_ms())) {
       logf_("button %u pressed twice", G.cfg.button);
       atomic_store(&G.btn_req, 1);
     }

@@ -31,18 +31,24 @@ left=0
 right=1
 tap_card=auto
 
-# The controller button whose double press saves (a channel-1 note; 93 is Rec Arm on a Force, 73 is Rec;
-# 0 turns the button off and leaves the trigger file). The first press still reaches MPC, so it arms as usual.
-button=93
+# The controller button whose double press saves (a channel-1 note):
+#   auto   93 (Rec Arm) on a Force, 80 (Overdub) on other models. The default.
+#   learn  the first button you double-press becomes the button; it is remembered in button.learned (delete that file
+#          to learn again). A click (and, on a Force, the LED) confirms it. Use it where the buttons are not known yet.
+#   <n>    a note number: 93 Rec Arm and 73 Rec on a Force; 80 Overdub, 73 Rec, 83 Play Start on the MPC family.
+#   0      no button; use the trigger file.
+# The first press still reaches MPC, so it does what it always does; use a button where a quick double press is harmless.
+button=auto
 # Two presses within this many ms are a double press.
 double_ms=350
 
 # LED feedback on the button above (or led_button, a button number): led_fast_blinks quick blinks as soon as the
 # press registers, then led_blinks slow ones when the WAV is written. After each run the value MPC had given the
 # LED is put back. led_on is the lit half's LED value, led_ms / led_fast_ms the length of each half in ms.
-# MPC sets button LEDs with control changes on channel 1 (controller = button, value = state);
-# the right values are learned on a device with midi_log=1 (below).
-led=1
+# MPC sets button LEDs with control changes on channel 1 (controller = button, value = state). That is only known to
+# work on a Force, so led=auto (the default) uses it there and sends nothing to other models; led=1 forces it on,
+# led=0 turns it off.
+led=auto
 led_button=auto
 led_on=3
 led_blinks=3

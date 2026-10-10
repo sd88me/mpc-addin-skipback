@@ -22,7 +22,7 @@ cp "$B/bin/MPC" "$B/bin/not-mpc"
 ASANLIB=$($CC -print-file-name=libasan.so)
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 run() { # run <binary> <mode> <workdir>
-  MPC_SKIPBACK_CONF="$3/skipback.conf" LD_PRELOAD="$ASANLIB:$PWD/$B/libmpc_skipback.so" "$1" "$3" "$2"
+  MPC_SKIPBACK_CONF="$3/skipback.conf" MPC_SKIPBACK_LEARNED="$3/button.learned" LD_PRELOAD="$ASANLIB:$PWD/$B/libmpc_skipback.so" "$1" "$3" "$2"
 }
 mk() { mkdir -p "$1"; cat > "$1/skipback.conf" <<CONF
 window_sec=5
@@ -39,6 +39,14 @@ mk "$tmp/a"; run "$B/bin/MPC" mpc "$tmp/a" || { cat "$tmp/a/skipback.log"; exit 
 mk "$tmp/b" click=1; touch "$tmp/b/click-on"; run "$B/bin/MPC" mpc "$tmp/b" || { cat "$tmp/b/skipback.log"; exit 1; }
 mk "$tmp/f" "led_ms=30
 led_fast_ms=20";  touch "$tmp/f/btn-on"; run "$B/bin/MPC" mpc "$tmp/f" || { cat "$tmp/f/skipback.log"; exit 1; }
+mk "$tmp/g" "led_ms=30
+led_fast_ms=20"; touch "$tmp/g/mpc-on"; run "$B/bin/MPC" mpc "$tmp/g" || { cat "$tmp/g/skipback.log"; exit 1; }
+mk "$tmp/h" "button=learn
+led_ms=30
+led_fast_ms=20"; touch "$tmp/h/learn-on"; run "$B/bin/MPC" mpc "$tmp/h" || { cat "$tmp/h/skipback.log"; exit 1; }
+# a second start with button=learn uses what was learned and does not learn again
+rm -f "$tmp/h/learn-on"; rm -f "$tmp/h/skipback.log"; run "$B/bin/MPC" mpc "$tmp/h" || { cat "$tmp/h/skipback.log"; exit 1; }
+grep -q "button 60, as learned earlier" "$tmp/h/skipback.log" && echo "ok   learned button kept across starts" || { echo "FAIL: learned button not kept"; cat "$tmp/h/skipback.log"; exit 1; }
 mk "$tmp/c"; run "$B/bin/not-mpc" inert "$tmp/c"
 mk "$tmp/d" enabled=0; run "$B/bin/MPC" inert "$tmp/d"
 mk "$tmp/e"; run /bin/true x "$tmp/e" 2>/dev/null || true

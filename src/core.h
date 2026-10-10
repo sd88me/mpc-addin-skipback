@@ -8,6 +8,9 @@
 
 #define SB_MAX_WINDOW_SEC 60u
 #define SB_MAX_RATE       96000u
+enum { SB_BTN_NUM = 0, SB_BTN_AUTO = 1, SB_BTN_LEARN = 2 };
+#define SB_FORCE_BUTTON 93     /* Rec Arm on a Force */
+#define SB_MPC_BUTTON   80     /* Overdub on the MPC family */
 #define SB_SLACK_SEC      2u    /* buffer kept beyond the window, so a snapshot copy can never be overrun by the audio thread */
 
 typedef struct {
@@ -21,9 +24,11 @@ typedef struct {
   unsigned left, right;         /* channels of MPC's playback stream that hold main out */
   int click;                    /* mix a short click into main out when a save finishes (not recorded) */
   unsigned poll_ms;
-  unsigned button;              /* controller button (channel 1 note) whose double press saves; 0 = no button */
+  unsigned button;              /* controller button (channel 1 note) whose double press saves; 0 = none yet (see button_mode) */
+  int button_mode;              /* SB_BTN_NUM: `button` as set (0 = off); SB_BTN_AUTO: 93 on a Force, 80 (Overdub) otherwise;
+                                 * SB_BTN_LEARN: the first button double-pressed, remembered in button.learned */
   unsigned double_ms;           /* two presses within this many ms are a double press */
-  int led;                      /* flash an LED on the controller when a save finishes */
+  int led;                      /* flash an LED on the controller: 1 yes, 0 no, -1 auto (yes on a Force, the only model it is known to work on) */
   int led_button;               /* the LED (a button number); -1 = the same as `button` */
   unsigned led_on;              /* LED value for the lit half of a blink */
   unsigned led_blinks;          /* slow blinks when the WAV is written */
@@ -50,6 +55,12 @@ typedef struct { sb_mparse mp; unsigned note, dbl_ms; int has_last; long long la
 void sb_btn_init(sb_btn *b, unsigned note, unsigned dbl_ms);
 /* Feeds bytes read from the controller at time now_ms. Returns the number of double presses seen in them. */
 int sb_btn_feed(sb_btn *b, const uint8_t *p, size_t n, long long now_ms);
+
+/* Learn mode: the first note (channel 1, any button) pressed twice within dbl_ms. */
+typedef struct { sb_mparse mp; int last_note, learned; long long last_ms, now_ms; unsigned dbl_ms; } sb_learn;
+void sb_learn_init(sb_learn *l, unsigned dbl_ms);
+/* Returns the learned note (0..127) once a button has been double-pressed in these bytes, else -1. */
+int sb_learn_feed(sb_learn *l, const uint8_t *p, size_t n, long long now_ms);
 
 /* LED state as MPC last wrote it: control change channel 1, controller = button, value = LED state. */
 typedef struct { sb_mparse mp; uint8_t val[128]; int changed_btn, changed_val, changed; } sb_led;
