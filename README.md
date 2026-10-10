@@ -4,15 +4,15 @@ An addin for Akai MPC OS standalone devices (MPC Live, One, X, Key and Force) th
 all the time and, when you ask, saves the **last 30 seconds** as a WAV file: the take you didn't know you wanted
 until it was over.
 
-> **Status: tested offline only.** The code builds for the device and passes host tests (x86, ASan/UBSan, against a
-> fake audio library), but it has not yet run on a real device. Expect to be among the first. See
-> [Not verified yet](#not-verified-yet).
+> **Status: works on a Force (MPC OS 5.0.17, 2026-10-10).** A double press of Rec Arm saved a 30 s WAV and the LED
+> blinked when it was done. Host tests (x86, ASan/UBSan, fake libasound and rawmidi) pass. Other models are untested.
+> See [Not verified yet](#not-verified-yet).
 
 ## What it does
 
 - Keeps a rolling copy of main out (the first two channels of MPC's playback stream) in memory. 30 seconds is about
   10 MB; nothing is written to disk until you trigger a save.
-- On a trigger, writes the newest `window_sec` seconds (1 to 60, default 30) as a 24-bit stereo WAV named
+- On a trigger (a double press of a controller button, or a file), writes the newest `window_sec` seconds (1 to 60, default 30) as a 24-bit stereo WAV named
   `Skipback_YYYYMMDD_HHMMSS.wav`, then reports the result in a small file so something else (a button remap, a
   script) can show feedback.
 - Runs inside MPC as an `LD_PRELOAD` library, so there is no extra process to start and nothing to keep running. It
@@ -40,7 +40,11 @@ How the installer works, and what to do if an addin stops MPC from starting, is 
 
 ## Use
 
-Create the trigger file and the addin saves, deletes the file, and writes the result:
+**On a Force: press Rec Arm twice** (within 350 ms). The first press reaches MPC as usual (it arms), the second starts
+the save, and a few seconds later the Rec Arm LED blinks three times to say the WAV is written. `button`, `double_ms`
+and the `led_*` settings change this; `button=0` turns the button off.
+
+**From anything else**, create the trigger file and the addin saves, deletes the file, and writes the result:
 
 ```sh
 rm -f /tmp/mpc-addin-skipback.done
@@ -58,9 +62,7 @@ cat /tmp/mpc-addin-skipback.done        # a moment later
 Each trigger is one save; two presses make two files. To know a save finished, delete `done` first and wait for it to
 appear. Setting `click=1` also plays a short click through main out when a save succeeds (it is not recorded).
 
-Anything can create the file: a script, a plugin, or a hardware-button remap. The planned remap is **double press of
-Record** (rule in `akai_standalone_remap`, which doesn't have this action yet), flashing a button LED when `done` says
-`ok`.
+Anything can create the file: a script, a plugin, or a hardware-button remap. The button needs no remap tool.
 
 Files go to `/sdcard/Force Documents/Samples/Skipback` when `/sdcard/Force Documents` exists, otherwise
 `/sdcard/Skipback`. Set `output_dir` to change it.
@@ -77,6 +79,10 @@ Files go to `/sdcard/Force Documents/Samples/Skipback` when `/sdcard/Force Docum
 | `window_sec` | `30` | seconds saved per trigger, 1 to 60 |
 | `output_dir` | `auto` | where the WAVs go (absolute path) |
 | `trigger` / `done` | `/tmp/mpc-addin-skipback.{trigger,done}` | the two marker files |
+| `button` | `93` | controller button (channel-1 note) whose double press saves; 93 is Rec Arm on a Force, 73 is Rec; `0` = off |
+| `double_ms` | `350` | two presses within this are a double press |
+| `led`, `led_button`, `led_on`, `led_blinks`, `led_ms` | `1`, `auto`, `3`, `3`, `120` | the done blink: which LED (auto = the button), the lit value, how many times, how long each half |
+| `midi_log` | `0` | log controller presses and every LED change MPC makes, to find LED values on another model |
 | `click` | `0` | click through main out after a save |
 | `left` / `right` | `0` / `1` | channels of MPC's playback stream that carry main out |
 | `tap_card` | `auto` | the codec's ALSA card |
@@ -95,8 +101,9 @@ Files go to `/sdcard/Force Documents/Samples/Skipback` when `/sdcard/Force Docum
 
 ## Not verified yet
 
-- Which playback stream MPC opens on each model, and whether main out is always channels 0/1.
-- That a save during heavy playback doesn't disturb the audio.
+- Models other than the Force: the playback stream, the main-out channels, the button numbers and the LED values.
+- On the Force: that a save during heavy playback doesn't disturb the audio, and that the LED goes back to the state
+  MPC had set (Rec Arm's own LED was not written by MPC during the test, so it is restored to off).
 - The default folder outside a Force (`/sdcard/Skipback` is a guess).
 - Project name and tempo in the file name (the old Force version had them).
 
@@ -109,6 +116,14 @@ tools/build_armhf.sh     # Docker arm/v7: glibc <= 2.31, no libasound dependency
 
 Package with `tools/release_addin.py` from [mpc-vst-plugins](https://github.com/sd88me/mpc-vst-plugins), then
 `catalog_check.py --catalog`.
+
+## How the button and LED work
+
+MPC reads the Force's buttons from a rawmidi port with "Private" in its name (note-on, channel 1; the same port the
+[button remap](https://github.com/mmiroshnikov/akai_standalone_remap) shim hooks). The addin hooks `snd_rawmidi_read`
+on it and only looks at the bytes: nothing is changed, so it works with or without a remap tool. MPC sets button LEDs
+by writing a control change on channel 1 to the same port (controller = button, value = state); the addin remembers
+the last value of each and, for the done blink, writes the blink and then that value back.
 
 ## How it works
 
