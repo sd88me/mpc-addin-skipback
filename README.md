@@ -190,6 +190,8 @@ If there is no suitable button, set `button=0` and use the trigger file (for exa
 
 ## Status
 
+**Experimental.** The releases are marked as pre-releases while the buttons for other models are worked out.
+
 Works on an Akai Force (MPC 3.9.1, 2026-10-10): the double press, the saves (to the SD card, then to a USB drive), the
 LED flashes and the settings were all used on a real device. The other models are untested: the default button there
 (Overdub) is a guess and the LED feedback is off, because their button and LED numbers are not known yet. `button=learn`
