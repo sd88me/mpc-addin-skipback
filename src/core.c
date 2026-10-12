@@ -51,6 +51,15 @@ static int parse_uint(const char *v, unsigned lo, unsigned hi, unsigned *out) {
   return 0;
 }
 
+const char *sb_model_name(const char *code) {
+  static const struct { const char *code, *name; } models[] = {
+    { "ADA2", "Force" }, { "ACV5", "MPC X" }, { "ACV8", "MPC Live" }, { "ACVA", "MPC One" }, { "ACVB", "MPC Live 2" },
+    { "ACVM", "MPC Keys 61" }, { "ACV5S", "MPC XL" }, { "ACVA2", "MPC One 2" } };
+  for (size_t i = 0; i < sizeof models / sizeof *models; i++)
+    if (code && !strcmp(code, models[i].code)) return models[i].name;
+  return NULL;
+}
+
 int sb_parse_note(const char *s, unsigned *note) {
   static const struct { const char *name; unsigned note; } names[] = {
     { "shift", 49 }, { "overdub", 80 }, { "rec", 73 }, { "recarm", 93 }, { "stop", 81 }, { "play", 82 }, { "playstart", 83 } };
@@ -194,7 +203,12 @@ int sb_learn_feed(sb_learn *l, const uint8_t *p, size_t n, long long now_ms) {
 static void led_msg(uint8_t st, uint8_t d1, uint8_t d2, void *ctx) {
   sb_led *l = ctx;
   if (st != 0xB0 || d1 > 127) return;
+  if (d2 > l->maxv[d1]) l->maxv[d1] = d2;
   if (l->val[d1] != d2) { l->val[d1] = d2; l->changed_btn = d1; l->changed_val = d2; l->changed++; }
+}
+
+unsigned sb_led_lit(const sb_led *l, unsigned btn, unsigned fallback) {
+  return btn < 128 && l->maxv[btn] > 1 ? l->maxv[btn] : fallback;
 }
 
 void sb_led_init(sb_led *l) { memset(l, 0, sizeof *l); }

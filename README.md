@@ -60,7 +60,7 @@ catalog. How the installer works, and what to do if an addin stops MPC from star
 - **On a Force: press Rec Arm twice**, within about a third of a second. The first press does what it always does
   (it arms), MPC sees both presses, and the second one starts the save.
 - **On the other MPC models (One, Live, X, Key and the rest of that family): hold Shift and press Overdub.** This is the
-  default there, taken from the documented button numbers (not yet checked on a device: see
+  default there, taken from TheKikGen's MPC button table (not yet checked on a device: see
   [Other models](#other-models-and-learn-mode)). MPC also sees Shift + Overdub as it normally would.
 - Either can be changed: `button=` takes a note number, a name, a `shift+overdub`-style combination, or `learn`
   (see [Settings](#settings)). Pick a button or combination where an extra press is harmless.
@@ -77,9 +77,10 @@ trigger, up to `window_sec` seconds; right after MPC starts there may be less th
 
 ### The LED
 
-On a Force the Rec Arm LED flashes; on the other MPC models the Overdub LED. The LED values are the documented ones
-(see [Button and LED reference](#button-and-led-reference)): verified on a Force, and not yet on the other models. A controller
-the addin does not recognise (not a Force or MPC) gets no LED messages unless you set `led=1`.
+On a Force the Rec Arm LED flashes; on the other MPC models the Overdub LED. The blink uses the value MPC itself last used to
+light that LED, so it follows the model's own scheme (see [Button and LED reference](#button-and-led-reference)); before MPC has
+lit it, a default is used. Verified on a Force, not yet on the other models. A controller that is neither a Force nor an MPC
+(by its product code and port name) gets no LED messages unless you set `led=1`.
 
 | You see | It means |
 |---|---|
@@ -133,7 +134,7 @@ editing). `etc/skipback.conf.example` in this repo lists every key with its expl
 | `led_button` | `auto` | which LED blinks (a button number); `auto` = the same button |
 | `led_fast_blinks`, `led_fast_ms` | `3`, `50` | the quick flashes: how many, and the length of each half in ms (`0` blinks = none) |
 | `led_blinks`, `led_ms` | `3`, `250` | the slow flashes |
-| `led_on` | `auto` | the LED value of the lit half of a flash: `auto` = 3 on a Force, 2 elsewhere (the documented "full" for the one-colour Overdub LED); a number 0 to 127 sets it |
+| `led_on` | `auto` | the LED value of the lit half of a flash: `auto` = the highest value MPC has itself written to that LED (so it follows the model's scheme), else 3 on a Force and 2 elsewhere; or a number 0 to 127 |
 | `click` | `0` | `1` also plays a short click through main out when a save finishes (it is not recorded) |
 | `trigger`, `done` | `/tmp/mpc-addin-skipback.{trigger,done}` | the two marker files |
 | `left`, `right` | `0`, `1` | channels of MPC's output stream that carry main out |
@@ -177,34 +178,44 @@ If there is no suitable button, set `button=0` and use the trigger file (for exa
 
 ## Button and LED reference
 
-MPC hardware sends button presses as MIDI notes on channel 1 (press = velocity 127, release = 0) on a port with
-"Private" in its name, and sets button LEDs with a control change on channel 1 whose controller number is the button's
-note number. Documentation found so far:
+How MPC talks to its own controls, as far as it is known. The main source is TheKikGen's
+[MPCLiveXplore-libs](https://github.com/TheKikGen/MPCLiveXplore-libs), which runs inside MPC on the standalone models and the
+Force (`src/tkgl_midimapper.h` for the buttons, `tkgl_midimapper.c` and `tmm-plugins/tmm-IamForce2.c` for the rest).
 
-| Button | Note / LED controller | LED | LED values |
-|---|---|---|---|
-| Shift | 49 | red / white (two colour) | 0 off, 1 colour 1 dim, 2 colour 2 dim, 3 colour 1 full, 4 colour 2 |
-| Overdub | 80 | red (one colour) | 0 off, 1 dim, 2 full |
-| Rec | 73 | red (one colour) | 0, 1, 2 |
-| Stop / Play / Play Start | 81 / 82 / 83 | white / green / green | 0, 1, 2 |
-| Rec Arm (Force) | 93 | not known | MPC never wrote it in the tests; value 3 as the lit half of a blink was seen to work on a Force |
-| Tap Tempo | 53 | red / white (two colour) | seen on a Force: alternates 1 and 3 with the tempo |
-| Undo, Copy, Erase, Note Repeat | 67, 122, 9, 11 | red / white | 0 to 4 |
+- **Port.** MPC reads its hardware from an ALSA rawmidi port with "Private" in its name: `MPC ... Private` on the MPC models,
+  `Akai Pro Force Private` on a Force (TheKikGen finds it with `(MPC|Akai Pro Force|Force 6).*Privat.*`). Press and release
+  of a button arrive on it as note-on, channel 1, velocity 127 and 0. This addin hooks reads and writes on that port.
+- **Model.** The device tree's product code (`/sys/firmware/devicetree/base/inmusic,product-code`), which this addin logs:
+  `ADA2` Force, `ACV5` MPC X, `ACV8` MPC Live, `ACVA` MPC One, `ACVB` MPC Live 2, `ACVM` MPC Keys 61, `ACV5S` MPC XL, `ACVA2`
+  MPC One 2.
+- **Buttons.** One shared table for the MPC models (`MPC_BT_*`), and a Force table (`FORCE_BT_*`):
 
-- **Source of the table:** the MPC Studio Mk2 charts by bcrowe306,
-  [MPC-Studio-Mk2-Midi-Sysex-Charts](https://github.com/bcrowe306/MPC-Studio-Mk2-Midi-Sysex-Charts): button notes and
-  the LED scheme, found by sending and watching MIDI on that controller.
-- **Same numbers elsewhere:** TheKikGen's [MPCLiveXplore-libs](https://github.com/TheKikGen/MPCLiveXplore-libs)
-  (`src/tkgl_midimapper.h`) lists the MPC and Force buttons (Rec 73, Overdub 80, Stop 81, Play 82, Play Start 83, Shift
-  49 on both; Force Rec Arm 93) and sets Force button LEDs from a channel-1 control change in its plugins. The
-  [akai_standalone_remap](https://github.com/mmiroshnikov/akai_standalone_remap) README (MPC Live, MPC 3.9.1) uses
-  Shift 49, Menu 123, Main 52, Next Seq 42, + 54, - 55, Pad Banks 35 to 38, on the MPC X also XYFX 126, Channel Mixer
-  116 and Pad Mixer 115.
-- **What is verified on a device:** the Force (Rec Arm 93, the control-change LEDs, the values 1 and 3 above). The
-  standalone MPCs are assumed to follow the same scheme as the Mk2 and the Force; that is the open question this addin
-  asks testers to settle.
-- **Not found:** no Akai MIDI implementation chart for the standalone MPCs, and no documentation of what Shift + Overdub does on them
-  (if it does something you do not want, pick another button with `button=`).
+  | Button | MPC models | Force |
+  |---|---|---|
+  | Shift | 49 | 49 |
+  | Rec | 73 | 73 |
+  | Overdub | 80 | (Save is 36) |
+  | Stop / Play | 81 / 82 | 81 / 82 |
+  | Play Start | 83 | Launch 116 (Launch 1 to 8: 56 to 63) |
+  | Rec Arm | 74 (listed) | 93 |
+  | Tap Tempo, Undo | 53, 67 | 53, 67 |
+  | Menu, Main | 123, 52 | Menu 2 |
+
+  (The MPC table also lists Rec Arm 74, Read/Write 75, Mute 76, Solo 77 and F-key 78; whether a given model has the physical
+  button is not stated.) The [akai_standalone_remap](https://github.com/mmiroshnikov/akai_standalone_remap) README, tried on an
+  MPC Live (MPC 3.9.1), uses the same Shift 49, Menu 123, Main 52, + 54, - 55 and Pad Banks 35 to 38.
+- **LEDs.** MPC lights a button with a control change on channel 1 written to the same port: controller = the button's note
+  number, value = the state. TheKikGen's Force plugin takes the control change the Force app writes, changes only the
+  controller number to the matching MPC button and passes the **value through unchanged** to MPC hardware, so the value
+  scheme is the Force's. Measured on a Force: values 1 to 4, where 1 and 3 are colour 1 (dim, full) and 2 and 4 colour 2 (the Tap
+  Tempo LED alternates 1 and 3 with the tempo), and 0 is off. A one-colour LED (Overdub is thought to be one) may use
+  fewer values: the addin therefore lights it with the highest value MPC has itself written to that LED, and only uses a
+  default (3 on a Force, 2 elsewhere) before MPC has.
+- **Verified on a device:** the Force (Rec Arm 93, the control-change LEDs, values 1 and 3). The standalone MPCs follow the
+  same code path in TheKikGen's mapper and are expected to behave the same, but nothing here has been run on one: that is the
+  open question this addin asks testers to settle.
+- **Not found:** an Akai MIDI implementation chart for the standalone MPCs, and documentation of what Shift + Overdub does on
+  them (if it does something you do not want, pick another button with `button=`).
 
 ## Troubleshooting
 

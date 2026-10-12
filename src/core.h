@@ -66,11 +66,19 @@ void sb_learn_init(sb_learn *l, unsigned dbl_ms);
 int sb_learn_feed(sb_learn *l, const uint8_t *p, size_t n, long long now_ms);
 
 /* LED state as MPC last wrote it: control change channel 1, controller = button, value = LED state. */
-typedef struct { sb_mparse mp; uint8_t val[128]; int changed_btn, changed_val, changed; } sb_led;
+typedef struct { sb_mparse mp; uint8_t val[128]; uint8_t maxv[128]; int changed_btn, changed_val, changed; } sb_led;
 void sb_led_init(sb_led *l);
+/* The value to light button `btn` with: the highest value MPC itself has written to that LED if that looks lit (more
+ * than 1, which is "dim"), else `fallback`. */
+unsigned sb_led_lit(const sb_led *l, unsigned btn, unsigned fallback);
 /* Feeds bytes MPC wrote to the controller. Returns the number of LED values that changed; the last change is in
  * changed_btn / changed_val. */
 int sb_led_feed(sb_led *l, const uint8_t *p, size_t n);
+
+/* The model from the device tree's product code (/sys/firmware/devicetree/base/inmusic,product-code), as TheKikGen's
+ * MPCLiveXplore-libs table has it: ADA2 Force, ACV5 MPC X, ACV8 MPC Live, ACVA MPC One, ACVB MPC Live 2, ACVM MPC Keys 61,
+ * ACV5S MPC XL, ACVA2 MPC One 2. NULL for a code not in the table. */
+const char *sb_model_name(const char *product_code);
 
 /* A button written as a note number or a name (shift, overdub, rec, recarm, stop, play, playstart). Returns 0, or -1 if it is neither. */
 int sb_parse_note(const char *s, unsigned *note);

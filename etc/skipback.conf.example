@@ -48,10 +48,10 @@ double_ms=350
 # press registers, then led_blinks slow ones when the WAV is written. After each run the value MPC had given the
 # LED is put back. led_on is the lit half's LED value, led_ms / led_fast_ms the length of each half in ms.
 # MPC sets button LEDs with control changes on channel 1 (controller = button, value = state). Verified on a Force; the
-# same scheme is documented for the MPC family. led=auto (the default) uses it on a Force and the MPC models and sends
+# same scheme is expected on the MPC models (TheKikGen's mapper passes the Force's LED values to MPC hardware). led=auto (the default) uses it on a Force and the MPC models and sends
 # nothing to any other controller; led=1 forces it on, led=0 turns it off.
-# led_on=auto is 3 on a Force (seen to work on Rec Arm) and 2 elsewhere (the documented full value of the one-colour Overdub
-# LED: 0 off, 1 dim, 2 full).
+# led_on=auto lights the LED with the highest value MPC has itself written to it (so it follows the model's scheme), and
+# before that uses 3 on a Force and 2 elsewhere. A number sets it.
 led=auto
 led_button=auto
 led_on=auto

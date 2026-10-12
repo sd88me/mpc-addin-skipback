@@ -77,7 +77,9 @@ static struct {
   sb_learn learn;                     /* ditto; used while learning */
   int learning;                       /* read hook: the next double-pressed button becomes `button` */
   int is_force;                       /* the controller port's name says Force */
-  int led_known;                      /* ... or MPC: the LED protocol is documented for those (Force verified) */
+  int led_known;                      /* ... or an MPC model: the same LED scheme (verified on a Force) */
+  char product[16];                   /* device-tree product code, e.g. ADA2 */
+  const char *model;                  /* its name from the table, or NULL */
   _Atomic int learned_req;            /* note + 1 of a button just learned, for the save thread to confirm and store */
   char learned_path[200];
   sb_led led;                         /* guarded by wr_lock */
@@ -189,6 +191,16 @@ __attribute__((constructor)) static void sb_ctor(void) {
   if (!G.cfg.enabled) { logf_("disabled in settings"); return; }
   if (G.cfg.left == G.cfg.right) { logf_("left and right are the same channel; disabled"); return; }
   G.card = resolve_card();
+  {
+    const char *pp = getenv("MPC_SKIPBACK_PRODUCT");
+    FILE *pf = fopen(pp && *pp ? pp : "/sys/firmware/devicetree/base/inmusic,product-code", "re");
+    if (pf) {
+      if (fgets(G.product, sizeof G.product, pf)) G.product[strcspn(G.product, "\r\n\t ")] = 0;   /* the device tree pads it with a NUL */
+      fclose(pf);
+    }
+    G.model = sb_model_name(G.product);
+    logf_("model: %s (product code '%s')", G.model ? G.model : "not in the table", G.product);
+  }
   const char *lp = getenv("MPC_SKIPBACK_LEARNED");
   if (lp && *lp) snprintf(G.learned_path, sizeof G.learned_path, "%s", lp);
   else snprintf(G.learned_path, sizeof G.learned_path, "%s/button.learned", G.dir[0] ? G.dir : ".");
@@ -258,11 +270,18 @@ static void sleep_ms(unsigned ms) {
 }
 
 /* LED feedback: on when asked for, and by default on a Force (verified) and on the MPC models (the same scheme is
- * documented for the MPC Studio Mk2; see the README). A controller that is neither stays dark unless led=1. */
+ * run through the same code path in TheKikGen's mapper; see the README). A controller that is neither stays dark unless led=1. */
 static int led_enabled(void) { return G.cfg.led == 1 || (G.cfg.led == -1 && G.led_known); }
 
-/* The lit value: 3 is "full" on the Force's two-colour Rec Arm; the MPC family's Overdub is a one-colour LED, full = 2. */
-static unsigned led_on_value(void) { return G.cfg.led_on >= 0 ? (unsigned)G.cfg.led_on : (G.is_force ? 3u : 2u); }
+/* The lit value of a blink: set by led_on, else the highest value MPC has itself written to that LED (so it follows whatever
+ * scheme the model's LED uses), else 3 on a Force and 2 elsewhere (the Overdub LED is thought to be one-colour: 0, 1 dim, 2 full). */
+static unsigned led_on_value(unsigned btn) {
+  if (G.cfg.led_on >= 0) return (unsigned)G.cfg.led_on;
+  pthread_mutex_lock(&G.wr_lock);
+  unsigned v = sb_led_lit(&G.led, btn, G.is_force ? 3u : 2u);   /* what MPC itself uses for that LED, once it has lit it */
+  pthread_mutex_unlock(&G.wr_lock);
+  return v;
+}
 
 /* One LED change on the controller: control change, channel 1, controller = button, value = state. */
 static void led_set(snd_rawmidi_t *out, unsigned button, unsigned value) {
@@ -278,7 +297,7 @@ static void led_blink(unsigned n, unsigned ms) {
   unsigned btn = G.cfg.led_button >= 0 ? (unsigned)G.cfg.led_button : G.cfg.button;
   if (!led_enabled() || !n || !out || btn > 127) return;
   for (unsigned i = 0; i < n; i++) {
-    led_set(out, btn, led_on_value());
+    led_set(out, btn, led_on_value(btn));
     sleep_ms(ms);
     led_set(out, btn, 0);
     sleep_ms(ms);
@@ -465,8 +484,8 @@ EXPORT int snd_rawmidi_open(snd_rawmidi_t **in, snd_rawmidi_t **out, const char 
   if (r != 0 || !G.active || (G.cfg.button_mode == SB_BTN_NUM && !G.cfg.button)) return r;
   char names[160];
   if (in && *in && is_private(*in, names, sizeof names)) {
-    G.is_force = strstr(names, "Force") != NULL;
-    G.led_known = G.is_force || strstr(names, "MPC") != NULL;
+    G.is_force = !strcmp(G.product, "ADA2") || strstr(names, "Force") != NULL;
+    G.led_known = G.is_force || G.model != NULL || strstr(names, "MPC") != NULL;
     if (G.cfg.button_mode == SB_BTN_AUTO) {
       G.cfg.button = G.is_force ? SB_FORCE_BUTTON : SB_MPC_BUTTON;
       G.cfg.hold = G.is_force ? 0 : SB_MPC_HOLD;

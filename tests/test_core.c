@@ -200,6 +200,17 @@ int main(void) {
       CHECK_EQ(sb_parse_note("overdub", &n1), 0); CHECK_EQ(n1, 80); CHECK_EQ(sb_parse_note("recarm", &n1), 0); CHECK_EQ(n1, 93);
       CHECK_EQ(sb_parse_note("93", &n1), 0); CHECK_EQ(n1, 93); CHECK(sb_parse_note("nope", &n1) != 0); CHECK(sb_parse_note("128", &n1) != 0);
     }
+    CHECK(!strcmp(sb_model_name("ADA2"), "Force")); CHECK(!strcmp(sb_model_name("ACV8"), "MPC Live")); CHECK(!strcmp(sb_model_name("ACVA2"), "MPC One 2"));
+    CHECK(!strcmp(sb_model_name("ACV5S"), "MPC XL")); CHECK(sb_model_name("XXXX") == NULL); CHECK(sb_model_name(NULL) == NULL); CHECK(sb_model_name("") == NULL);
+    {
+      sb_led ll; sb_led_init(&ll);
+      CHECK_EQ(sb_led_lit(&ll, 80, 2), 2);                               /* nothing seen: the fallback */
+      const uint8_t d1[] = { 0xB0, 80, 1, 0xB0, 80, 0 };
+      sb_led_feed(&ll, d1, sizeof d1); CHECK_EQ(sb_led_lit(&ll, 80, 2), 2); /* only dim seen: still the fallback */
+      const uint8_t d3[] = { 0xB0, 80, 3, 0xB0, 80, 1 };
+      sb_led_feed(&ll, d3, sizeof d3); CHECK_EQ(sb_led_lit(&ll, 80, 2), 3); /* MPC lit it with 3: use that */
+      CHECK_EQ(sb_led_lit(&ll, 81, 2), 2); CHECK_EQ(sb_led_lit(&ll, 200, 7), 7);
+    }
     sb_cfg c2; sb_cfg_defaults(&c2); CHECK_EQ(c2.button_mode, SB_BTN_AUTO); CHECK_EQ(c2.led, -1); CHECK_EQ(c2.led_button, -1);
     {
       char cf[600]; snprintf(cf, sizeof cf, "%s/b.conf", dir);

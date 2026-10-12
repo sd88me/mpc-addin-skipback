@@ -22,7 +22,7 @@ cp "$B/bin/MPC" "$B/bin/not-mpc"
 ASANLIB=$($CC -print-file-name=libasan.so)
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 run() { # run <binary> <mode> <workdir>
-  MPC_SKIPBACK_CONF="$3/skipback.conf" MPC_SKIPBACK_LEARNED="$3/button.learned" LD_PRELOAD="$ASANLIB:$PWD/$B/libmpc_skipback.so" "$1" "$3" "$2"
+  MPC_SKIPBACK_CONF="$3/skipback.conf" MPC_SKIPBACK_LEARNED="$3/button.learned" MPC_SKIPBACK_PRODUCT="$3/product" LD_PRELOAD="$ASANLIB:$PWD/$B/libmpc_skipback.so" "$1" "$3" "$2"
 }
 mk() { mkdir -p "$1"; cat > "$1/skipback.conf" <<CONF
 window_sec=5
@@ -41,6 +41,9 @@ mk "$tmp/f" "led_ms=30
 led_fast_ms=20";  touch "$tmp/f/btn-on"; run "$B/bin/MPC" mpc "$tmp/f" || { cat "$tmp/f/skipback.log"; exit 1; }
 mk "$tmp/g" "led_ms=30
 led_fast_ms=20"; touch "$tmp/g/mpc-on"; run "$B/bin/MPC" mpc "$tmp/g" || { cat "$tmp/g/skipback.log"; exit 1; }
+mk "$tmp/p" "led_ms=30
+led_fast_ms=20"; touch "$tmp/p/prod-on"; printf 'ACVA\0' > "$tmp/p/product"; run "$B/bin/MPC" mpc "$tmp/p" || { cat "$tmp/p/skipback.log"; exit 1; }
+grep -q "model: MPC One (product code 'ACVA')" "$tmp/p/skipback.log" && echo "ok   model from the product code" || { echo "FAIL: model not read"; cat "$tmp/p/skipback.log"; exit 1; }
 mk "$tmp/u" "led_ms=30
 led_fast_ms=20"; touch "$tmp/u/unk-on"; run "$B/bin/MPC" mpc "$tmp/u" || { cat "$tmp/u/skipback.log"; exit 1; }
 mk "$tmp/h" "button=learn

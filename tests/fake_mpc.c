@@ -153,8 +153,8 @@ int main(int argc, char **argv) {
     void *in, *out;
     fake_rm_private = 2; CHECK_EQ(snd_rawmidi_open(&in, &out, "hw:1,0", 0), 0);
     unsigned char got[32];
-    const unsigned char led80[] = { 0xB0, 80, 1 };                       /* MPC lights Overdub dim */
-    CHECK_EQ(snd_rawmidi_write(out, led80, 3), 3);
+    const unsigned char led80[] = { 0xB0, 80, 3, 0xB0, 80, 1 };          /* MPC lights Overdub with 3, then leaves it dim */
+    CHECK_EQ(snd_rawmidi_write(out, led80, 6), 6);
     const unsigned char rec[] = { 0x90, 93, 0x7f, 0x90, 93, 0, 0x90, 93, 0x7f, 0x90, 93, 0 };
     const unsigned char od2[] = { 0x90, 80, 0x7f, 0x90, 80, 0, 0x90, 80, 0x7f, 0x90, 80, 0 };
     const unsigned char sh_od[] = { 0x90, 49, 0x7f, 0x90, 80, 0x7f, 0x90, 80, 0, 0x90, 49, 0 };
@@ -164,15 +164,26 @@ int main(int argc, char **argv) {
     fake_rm_feed(sh_od, sizeof sh_od); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), (ssize_t)sizeof sh_od);
     CHECK(!memcmp(got, sh_od, sizeof sh_od));                          /* passed through unchanged */
     CHECK_EQ(wait_done(body, sizeof body), 0); CHECK(!strncmp(body, "ok ", 3));
-    for (int i = 0; i < 150 && fake_rm_out_n < 3 + 2 * 21; i++) usleep(20000);
-    CHECK_EQ(fake_rm_out_n, 3 + 2 * 21);                               /* fast blinks and slow blinks, each ending on the dim value MPC had set */
-    if (fake_rm_out_n == 45) {
+    for (int i = 0; i < 150 && fake_rm_out_n < 6 + 2 * 21; i++) usleep(20000);
+    CHECK_EQ(fake_rm_out_n, 6 + 2 * 21);                               /* fast blinks and slow blinks, each ending on the dim value MPC had set */
+    if (fake_rm_out_n == 48) {
       for (int round = 0; round < 2; round++) {
-        const unsigned char *o = fake_rm_out + 3 + round * 21;
-        for (int k = 0; k < 3; k++) { CHECK(!memcmp(o + k * 6, "\xB0\x50\x02", 3)); CHECK(!memcmp(o + 3 + k * 6, "\xB0\x50\x00", 3)); }
+        const unsigned char *o = fake_rm_out + 6 + round * 21;
+        for (int k = 0; k < 3; k++) { CHECK(!memcmp(o + k * 6, "\xB0\x50\x03", 3)); CHECK(!memcmp(o + 3 + k * 6, "\xB0\x50\x00", 3)); }   /* lit with what MPC used */
         CHECK(!memcmp(o + 18, "\xB0\x50\x01", 3));
       }
     }
+    snd_rawmidi_close(in); snd_rawmidi_close(out);
+  }
+  char pflag[400]; snprintf(pflag, sizeof pflag, "%s/prod-on", dir);
+  if (access(pflag, F_OK) == 0) {                 /* an unfamiliar port name, but the device tree says MPC One: LED on, fallback value 2 */
+    void *in, *out;
+    fake_rm_private = 3; CHECK_EQ(snd_rawmidi_open(&in, &out, "hw:1,0", 0), 0);
+    unsigned char got[32]; const unsigned char sh_od[] = { 0x90, 49, 0x7f, 0x90, 80, 0x7f, 0x90, 80, 0, 0x90, 49, 0 };
+    unlink(done); fake_rm_feed(sh_od, sizeof sh_od); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), (ssize_t)sizeof sh_od);
+    CHECK_EQ(wait_done(body, sizeof body), 0); CHECK(!strncmp(body, "ok ", 3));
+    for (int i = 0; i < 150 && fake_rm_out_n < 2 * 21; i++) usleep(20000);
+    CHECK_EQ(fake_rm_out_n, 2 * 21); if (fake_rm_out_n == 42) CHECK(!memcmp(fake_rm_out, "\xB0\x50\x02", 3));
     snd_rawmidi_close(in); snd_rawmidi_close(out);
   }
   char uflag[400]; snprintf(uflag, sizeof uflag, "%s/unk-on", dir);
