@@ -31,13 +31,15 @@ left=0
 right=1
 tap_card=auto
 
-# The controller button whose double press saves (a channel-1 note):
-#   auto   93 (Rec Arm) on a Force, 80 (Overdub) on other models. The default.
-#   learn  the first button you double-press becomes the button; it is remembered in button.learned (delete that file
-#          to learn again). A click (and, on a Force, the LED) confirms it. Use it where the buttons are not known yet.
-#   <n>    a note number: 93 Rec Arm and 73 Rec on a Force; 80 Overdub, 73 Rec, 83 Play Start on the MPC family.
-#   0      no button; use the trigger file.
-# The first press still reaches MPC, so it does what it always does; use a button where a quick double press is harmless.
+# The controller button that saves (a channel-1 note):
+#   auto      a Force: Rec Arm (93) pressed twice. Other models: Overdub (80) pressed while Shift (49) is held. The default.
+#   learn     the first button you double-press becomes the button; it is remembered in button.learned (delete that file
+#             to learn again). A click (and the LED) confirms it. Use it where the buttons are not known yet.
+#   93, recarm      that button pressed twice (a number, or a name: shift 49, overdub 80, rec 73, recarm 93, stop 81,
+#                   play 82, playstart 83)
+#   shift+overdub   a button pressed while another is held (49+80 means the same)
+#   0         no button; use the trigger file.
+# MPC still sees the presses, so use a button or combination where an extra press is harmless.
 button=auto
 # Two presses within this many ms are a double press.
 double_ms=350
@@ -45,12 +47,14 @@ double_ms=350
 # LED feedback on the button above (or led_button, a button number): led_fast_blinks quick blinks as soon as the
 # press registers, then led_blinks slow ones when the WAV is written. After each run the value MPC had given the
 # LED is put back. led_on is the lit half's LED value, led_ms / led_fast_ms the length of each half in ms.
-# MPC sets button LEDs with control changes on channel 1 (controller = button, value = state). That is only known to
-# work on a Force, so led=auto (the default) uses it there and sends nothing to other models; led=1 forces it on,
-# led=0 turns it off.
+# MPC sets button LEDs with control changes on channel 1 (controller = button, value = state). Verified on a Force; the
+# same scheme is documented for the MPC family. led=auto (the default) uses it on a Force and the MPC models and sends
+# nothing to any other controller; led=1 forces it on, led=0 turns it off.
+# led_on=auto is 3 on a Force (seen to work on Rec Arm) and 2 elsewhere (the documented full value of the one-colour Overdub
+# LED: 0 off, 1 dim, 2 full).
 led=auto
 led_button=auto
-led_on=3
+led_on=auto
 led_blinks=3
 led_ms=250
 led_fast_blinks=3

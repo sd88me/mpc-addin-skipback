@@ -13,10 +13,10 @@ program to start, and uses the controller's own buttons and LEDs. Tested on a Fo
 
 - **Always recording, nothing to arm.** A rolling buffer holds the newest audio. Nothing is written to disk until you
   save.
-- **One gesture to save.** Double-press a hardware button: Rec Arm on a Force, Overdub on other MPC models, or any
-  button you pick (`button=learn` lets you just press it). The first press still reaches MPC as usual.
-- **Light feedback (Force).** The button's LED gives three quick flashes when the double press registers and three slow
-  ones when the WAV has been written.
+- **One gesture to save.** On a Force, double-press **Rec Arm**; on the other MPC models, hold **Shift** and press
+  **Overdub**. Or any button you pick (`button=learn` lets you just press it). MPC still sees the presses as usual.
+- **Light feedback.** The button's LED gives three quick flashes when the gesture registers and three slow ones when the
+  WAV has been written (Rec Arm's on a Force, Overdub's on the other models).
 - **30 to 60 seconds**, your choice (`window_sec`), saved as a 24-bit stereo WAV with the date and time in its name.
 - **Puts the file where you'd look for it.** Saves to a USB drive or SSD if one is plugged in, else the SD card, else
   your Samples folder. Or any folder you choose.
@@ -57,11 +57,13 @@ catalog. How the installer works, and what to do if an addin stops MPC from star
 
 ### Saving
 
-- **Double-press the button.** On a **Force**, press **Rec Arm** twice, within about a third of a second. On **other
-  models** the default is **Overdub** (not yet checked on a device: see
-  [Other models](#other-models-and-learn-mode)). The first press does what it always does (Rec Arm arms, Overdub
-  toggles), MPC sees both presses, and the second one starts the save. Pick a button where a quick double press is
-  harmless.
+- **On a Force: press Rec Arm twice**, within about a third of a second. The first press does what it always does
+  (it arms), MPC sees both presses, and the second one starts the save.
+- **On the other MPC models (One, Live, X, Key and the rest of that family): hold Shift and press Overdub.** This is the
+  default there, taken from the documented button numbers (not yet checked on a device: see
+  [Other models](#other-models-and-learn-mode)). MPC also sees Shift + Overdub as it normally would.
+- Either can be changed: `button=` takes a note number, a name, a `shift+overdub`-style combination, or `learn`
+  (see [Settings](#settings)). Pick a button or combination where an extra press is harmless.
 - **Or create the trigger file.** Anything that can create `/tmp/mpc-addin-skipback.trigger` starts a save:
 
   ```sh
@@ -73,10 +75,11 @@ catalog. How the installer works, and what to do if an addin stops MPC from star
 The addin deletes the trigger file when it takes it, so two presses are two saves. It saves what played *before* the
 trigger, up to `window_sec` seconds; right after MPC starts there may be less than the full window.
 
-### The LED (Force)
+### The LED
 
-The LED feedback is on by default only on a Force, the one model its protocol is known for. Elsewhere there is no LED
-feedback unless you set `led=1`; check the saved file or `skipback.log` instead.
+On a Force the Rec Arm LED flashes; on the other MPC models the Overdub LED. The LED values are the documented ones
+(see [Button and LED reference](#button-and-led-reference)): verified on a Force, and not yet on the other models. A controller
+the addin does not recognise (not a Force or MPC) gets no LED messages unless you set `led=1`.
 
 | You see | It means |
 |---|---|
@@ -123,14 +126,14 @@ editing). `etc/skipback.conf.example` in this repo lists every key with its expl
 |---|---|---|
 | `enabled` | `1` | `0` leaves the library loaded but idle |
 | `window_sec` | `30` | seconds saved per trigger, 1 to 60 |
-| `button` | `auto` | `auto` = 93 (Rec Arm) on a Force, 80 (Overdub) on other models; `learn` = the first button you double-press becomes the button (remembered in `button.learned`); a note number; or `0` for no button, leaving the trigger file |
+| `button` | `auto` | `auto` = double press of 93 (Rec Arm) on a Force, **Shift + Overdub** on other models; `learn` = the first button you double-press becomes the button (remembered in `button.learned`); a note number or name (`93`, `recarm`) = that button pressed twice; `hold+button` (`49+80`, `shift+overdub`) = that button pressed while the first is held; or `0` for no button, leaving the trigger file. Names: `shift` 49, `overdub` 80, `rec` 73, `recarm` 93, `stop` 81, `play` 82, `playstart` 83 |
 | `double_ms` | `350` | two presses within this many milliseconds are a double press |
 | `output_dir` | `auto` | `auto` (SSD, else SD card, else Samples folder), `samples` (Samples folder only) or an absolute path |
-| `led` | `auto` | `auto` = on for a Force, off for other models; `1` forces it on, `0` off |
+| `led` | `auto` | `auto` = on for a Force and the MPC models, off for any other controller; `1` forces it on, `0` off |
 | `led_button` | `auto` | which LED blinks (a button number); `auto` = the same button |
 | `led_fast_blinks`, `led_fast_ms` | `3`, `50` | the quick flashes: how many, and the length of each half in ms (`0` blinks = none) |
 | `led_blinks`, `led_ms` | `3`, `250` | the slow flashes |
-| `led_on` | `3` | the LED value of the lit half of a flash (the Force's Rec Arm shows 3 as lit) |
+| `led_on` | `auto` | the LED value of the lit half of a flash: `auto` = 3 on a Force, 2 elsewhere (the documented "full" for the one-colour Overdub LED); a number 0 to 127 sets it |
 | `click` | `0` | `1` also plays a short click through main out when a save finishes (it is not recorded) |
 | `trigger`, `done` | `/tmp/mpc-addin-skipback.{trigger,done}` | the two marker files |
 | `left`, `right` | `0`, `1` | channels of MPC's output stream that carry main out |
@@ -141,9 +144,9 @@ editing). `etc/skipback.conf.example` in this repo lists every key with its expl
 
 ### Other models and learn mode
 
-The buttons are numbered by MPC per model, and only the Force's are checked here (Rec Arm is note 93, Rec 73). On any
-other model the default is **Overdub (note 80)**, from the shared MPC button tables, which is a guess. **Please help
-find out what works on yours.** There are two ways:
+On a model other than the Force the default is **Shift + Overdub** (notes 49 and 80), from the shared MPC button
+tables below. Only the Force's numbers (Rec Arm 93) have been checked on a real device. **Please help find out what works
+on yours.** There are two ways:
 
 **1. Learn mode (easiest).** Lets you pick any button without knowing its number.
 
@@ -172,6 +175,37 @@ If there is no suitable button, set `button=0` and use the trigger file (for exa
 - `enabled=0` in `skipback.conf` (and restart MPC) leaves it loaded but idle.
 - `sh /data/mpc-addins/skipback/uninstall.sh` removes it. It also deletes `skipback.conf`; your recordings are kept.
 
+## Button and LED reference
+
+MPC hardware sends button presses as MIDI notes on channel 1 (press = velocity 127, release = 0) on a port with
+"Private" in its name, and sets button LEDs with a control change on channel 1 whose controller number is the button's
+note number. Documentation found so far:
+
+| Button | Note / LED controller | LED | LED values |
+|---|---|---|---|
+| Shift | 49 | red / white (two colour) | 0 off, 1 colour 1 dim, 2 colour 2 dim, 3 colour 1 full, 4 colour 2 |
+| Overdub | 80 | red (one colour) | 0 off, 1 dim, 2 full |
+| Rec | 73 | red (one colour) | 0, 1, 2 |
+| Stop / Play / Play Start | 81 / 82 / 83 | white / green / green | 0, 1, 2 |
+| Rec Arm (Force) | 93 | not known | MPC never wrote it in the tests; value 3 as the lit half of a blink was seen to work on a Force |
+| Tap Tempo | 53 | red / white (two colour) | seen on a Force: alternates 1 and 3 with the tempo |
+| Undo, Copy, Erase, Note Repeat | 67, 122, 9, 11 | red / white | 0 to 4 |
+
+- **Source of the table:** the MPC Studio Mk2 charts by bcrowe306,
+  [MPC-Studio-Mk2-Midi-Sysex-Charts](https://github.com/bcrowe306/MPC-Studio-Mk2-Midi-Sysex-Charts): button notes and
+  the LED scheme, found by sending and watching MIDI on that controller.
+- **Same numbers elsewhere:** TheKikGen's [MPCLiveXplore-libs](https://github.com/TheKikGen/MPCLiveXplore-libs)
+  (`src/tkgl_midimapper.h`) lists the MPC and Force buttons (Rec 73, Overdub 80, Stop 81, Play 82, Play Start 83, Shift
+  49 on both; Force Rec Arm 93) and sets Force button LEDs from a channel-1 control change in its plugins. The
+  [akai_standalone_remap](https://github.com/mmiroshnikov/akai_standalone_remap) README (MPC Live, MPC 3.9.1) uses
+  Shift 49, Menu 123, Main 52, Next Seq 42, + 54, - 55, Pad Banks 35 to 38, on the MPC X also XYFX 126, Channel Mixer
+  116 and Pad Mixer 115.
+- **What is verified on a device:** the Force (Rec Arm 93, the control-change LEDs, the values 1 and 3 above). The
+  standalone MPCs are assumed to follow the same scheme as the Mk2 and the Force; that is the open question this addin
+  asks testers to settle.
+- **Not found:** no Akai MIDI implementation chart for the standalone MPCs, and no documentation of what Shift + Overdub does on them
+  (if it does something you do not want, pick another button with `button=`).
+
 ## Troubleshooting
 
 - **Nothing happens on a double press.** Open `/data/mpc-addins/skipback/skipback.log`. It should show `active`, then
@@ -194,15 +228,16 @@ If there is no suitable button, set `button=0` and use the trigger file (for exa
 
 Works on an Akai Force (MPC 3.9.1, 2026-10-10): the double press, the saves (to the SD card, then to a USB drive), the
 LED flashes and the settings were all used on a real device. The other models are untested: the default button there
-(Overdub) is a guess and the LED feedback is off, because their button and LED numbers are not known yet. `button=learn`
-is there to find them; see [Other models](#other-models-and-learn-mode). The offline tests (x86, ASan/UBSan, against a fake audio library and a fake MIDI
+(Shift + Overdub) and the LED values come from documentation of the MPC button and LED numbers rather than a device (see
+the [reference](#button-and-led-reference)), and `button=learn` is there to find what works;
+see [Other models](#other-models-and-learn-mode). The offline tests (x86, ASan/UBSan, against a fake audio library and a fake MIDI
 port) cover everything but the device itself.
 
 Known limits:
 
 - **Memory.** The rolling buffer is sized for the largest window at the highest sample rate and grows to about 48 MB of RAM
   over the first couple of minutes whatever `window_sec` is.
-- **Second press.** The second press of the double press also reaches MPC, so a toggle button (Rec Arm, Overdub) toggles twice and ends where it started.
+- **MPC sees the presses too.** The addin only looks at the button presses; MPC still gets them. A toggle button pressed twice (Rec Arm) ends where it started, and Shift + Overdub does whatever MPC does with it.
 - **Slow cards.** A save takes 2 to 5 seconds on the Force's SD card; the LED waits for it. The audio is not affected.
 - **Failed saves** show quick flashes only; the reason is in `done` and the log.
 - **Project name and tempo** are not in the file name (the older Force-only version, in

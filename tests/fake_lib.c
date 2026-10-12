@@ -48,8 +48,8 @@ int snd_rawmidi_open(void **in, void **out, const char *name, int mode) {
 int snd_rawmidi_close(void *h) { free(h); return 0; }
 size_t snd_rawmidi_info_sizeof(void) { return 32; }
 int snd_rawmidi_info(void *h, void *info) { memcpy(info, h, 1); return 0; }
-const char *snd_rawmidi_info_get_subdevice_name(const void *info) { int k = *(const char *)info; return k == 1 ? "Akai Pro Force Private" : k == 2 ? "MPC Live Private" : "Other Port"; }
-const char *snd_rawmidi_info_get_name(const void *info) { int k = *(const char *)info; return k == 1 ? "Akai Pro Force" : k == 2 ? "MPC Live" : "Other"; }
+const char *snd_rawmidi_info_get_subdevice_name(const void *info) { int k = *(const char *)info; return k == 1 ? "Akai Pro Force Private" : k == 2 ? "MPC Live Private" : k == 3 ? "Acme Controller Private" : "Other Port"; }
+const char *snd_rawmidi_info_get_name(const void *info) { int k = *(const char *)info; return k == 1 ? "Akai Pro Force" : k == 2 ? "MPC Live" : k == 3 ? "Acme Controller" : "Other"; }
 ssize_t snd_rawmidi_read(void *h, void *buf, size_t size) {
   (void)h;
   size_t n = rm_in_n - rm_in_pos < size ? rm_in_n - rm_in_pos : size;

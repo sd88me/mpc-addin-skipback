@@ -77,6 +77,7 @@ static struct {
   sb_learn learn;                     /* ditto; used while learning */
   int learning;                       /* read hook: the next double-pressed button becomes `button` */
   int is_force;                       /* the controller port's name says Force */
+  int led_known;                      /* ... or MPC: the LED protocol is documented for those (Force verified) */
   _Atomic int learned_req;            /* note + 1 of a button just learned, for the save thread to confirm and store */
   char learned_path[200];
   sb_led led;                         /* guarded by wr_lock */
@@ -194,11 +195,11 @@ __attribute__((constructor)) static void sb_ctor(void) {
   if (G.cfg.button_mode == SB_BTN_LEARN) {
     FILE *lf = fopen(G.learned_path, "re");
     unsigned note = 0;
-    if (lf && fscanf(lf, "%u", &note) == 1 && note >= 1 && note <= 127) { G.cfg.button = note; G.cfg.button_mode = SB_BTN_NUM; logf_("button %u, as learned earlier (delete %s to learn again)", note, G.learned_path); }
+    if (lf && fscanf(lf, "%u", &note) == 1 && note >= 1 && note <= 127) { G.cfg.button = note; G.cfg.hold = 0; G.cfg.button_mode = SB_BTN_NUM; logf_("button %u, as learned earlier (delete %s to learn again)", note, G.learned_path); }
     else { G.learning = 1; logf_("learning: double-press the button to use"); }
     if (lf) fclose(lf);
   }
-  sb_btn_init(&G.btn, G.cfg.button, G.cfg.double_ms);
+  sb_btn_init(&G.btn, G.cfg.hold, G.cfg.button, G.cfg.double_ms);
   sb_learn_init(&G.learn, G.cfg.double_ms);
   sb_led_init(&G.led);
   G.active = 1;
@@ -256,8 +257,12 @@ static void sleep_ms(unsigned ms) {
   nanosleep(&ts, NULL);
 }
 
-/* LED feedback: on when asked for, and by default only on a Force (the one model the LED protocol is known for). */
-static int led_enabled(void) { return G.cfg.led == 1 || (G.cfg.led == -1 && G.is_force); }
+/* LED feedback: on when asked for, and by default on a Force (verified) and on the MPC models (the same scheme is
+ * documented for the MPC Studio Mk2; see the README). A controller that is neither stays dark unless led=1. */
+static int led_enabled(void) { return G.cfg.led == 1 || (G.cfg.led == -1 && G.led_known); }
+
+/* The lit value: 3 is "full" on the Force's two-colour Rec Arm; the MPC family's Overdub is a one-colour LED, full = 2. */
+static unsigned led_on_value(void) { return G.cfg.led_on >= 0 ? (unsigned)G.cfg.led_on : (G.is_force ? 3u : 2u); }
 
 /* One LED change on the controller: control change, channel 1, controller = button, value = state. */
 static void led_set(snd_rawmidi_t *out, unsigned button, unsigned value) {
@@ -273,7 +278,7 @@ static void led_blink(unsigned n, unsigned ms) {
   unsigned btn = G.cfg.led_button >= 0 ? (unsigned)G.cfg.led_button : G.cfg.button;
   if (!led_enabled() || !n || !out || btn > 127) return;
   for (unsigned i = 0; i < n; i++) {
-    led_set(out, btn, G.cfg.led_on);
+    led_set(out, btn, led_on_value());
     sleep_ms(ms);
     led_set(out, btn, 0);
     sleep_ms(ms);
@@ -461,12 +466,18 @@ EXPORT int snd_rawmidi_open(snd_rawmidi_t **in, snd_rawmidi_t **out, const char 
   char names[160];
   if (in && *in && is_private(*in, names, sizeof names)) {
     G.is_force = strstr(names, "Force") != NULL;
-    if (G.cfg.button_mode == SB_BTN_AUTO) { G.cfg.button = G.is_force ? SB_FORCE_BUTTON : SB_MPC_BUTTON; G.cfg.button_mode = SB_BTN_NUM; }
-    sb_btn_init(&G.btn, G.cfg.button, G.cfg.double_ms);
+    G.led_known = G.is_force || strstr(names, "MPC") != NULL;
+    if (G.cfg.button_mode == SB_BTN_AUTO) {
+      G.cfg.button = G.is_force ? SB_FORCE_BUTTON : SB_MPC_BUTTON;
+      G.cfg.hold = G.is_force ? 0 : SB_MPC_HOLD;
+      G.cfg.button_mode = SB_BTN_NUM;
+    }
+    sb_btn_init(&G.btn, G.cfg.hold, G.cfg.button, G.cfg.double_ms);
     sb_learn_init(&G.learn, G.cfg.double_ms);
     atomic_store(&G.rm_in, *in);
     if (G.learning) logf_("controller input hooked (%s %s): double-press the button you want to use", name ? name : "?", names);
-    else logf_("controller input hooked (%s %s): button %u, double press within %u ms, led %s", name ? name : "?", names, G.cfg.button, G.cfg.double_ms, led_enabled() ? "on" : "off");
+    else if (G.cfg.hold) logf_("controller input hooked (%s %s): button %u pressed while %u is held, led %s", name ? name : "?", names, G.cfg.button, G.cfg.hold, led_enabled() ? "on" : "off");
+    else logf_("controller input hooked (%s %s): button %u pressed twice within %u ms, led %s", name ? name : "?", names, G.cfg.button, G.cfg.double_ms, led_enabled() ? "on" : "off");
   }
   if (out && *out && is_private(*out, names, sizeof names)) {
     pthread_mutex_lock(&G.wr_lock);
@@ -510,12 +521,14 @@ EXPORT ssize_t snd_rawmidi_read(snd_rawmidi_t *h, void *buf, size_t size) {
       int note = sb_learn_feed(&G.learn, buf, (size_t)r, now_ms());
       if (note >= 0) {                      /* this double press only teaches; the next one saves */
         G.cfg.button = (unsigned)note;
+        G.cfg.hold = 0;
         G.learning = 0;
-        sb_btn_init(&G.btn, G.cfg.button, G.cfg.double_ms);
+        sb_btn_init(&G.btn, 0, G.cfg.button, G.cfg.double_ms);
         atomic_store(&G.learned_req, note + 1);
       }
     } else if (G.cfg.button && sb_btn_feed(&G.btn, buf, (size_t)r, now_ms())) {
-      logf_("button %u pressed twice", G.cfg.button);
+      if (G.cfg.hold) logf_("button %u pressed while %u held", G.cfg.button, G.cfg.hold);
+      else logf_("button %u pressed twice", G.cfg.button);
       atomic_store(&G.btn_req, 1);
     }
   }

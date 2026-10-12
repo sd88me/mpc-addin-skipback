@@ -158,7 +158,7 @@ int main(void) {
 
   /* controller MIDI: double press of button 93 */
   {
-    sb_btn bt; sb_btn_init(&bt, 93, 350);
+    sb_btn bt; sb_btn_init(&bt, 0, 93, 350);
     const uint8_t press[] = { 0x90, 93, 0x7f, 0x90, 93, 0x00 };
     CHECK_EQ(sb_btn_feed(&bt, press, sizeof press, 1000), 0);
     CHECK_EQ(sb_btn_feed(&bt, press, sizeof press, 1200), 1);          /* second press 200 ms later */
@@ -169,11 +169,11 @@ int main(void) {
     CHECK_EQ(sb_btn_feed(&bt, other, sizeof other, 3000), 0);          /* another button */
     /* one byte at a time, running status, realtime and a SysEx in between */
     const uint8_t odd[] = { 0xF0, 1, 2, 3, 0xF7, 0x90, 93, 0x7f, 0xF8, 93, 0x7f, 0xB0, 5, 6 };
-    sb_btn_init(&bt, 93, 350);
+    sb_btn_init(&bt, 0, 93, 350);
     int n = 0; for (size_t i = 0; i < sizeof odd; i++) n += sb_btn_feed(&bt, odd + i, 1, 5000 + (long long)i);
     CHECK_EQ(n, 1);
     const uint8_t vel0[] = { 0x90, 93, 0, 0x90, 93, 0, 0x80, 93, 64, 0x91, 93, 0x7f, 0x91, 93, 0x7f };
-    sb_btn_init(&bt, 93, 350);
+    sb_btn_init(&bt, 0, 93, 350);
     CHECK_EQ(sb_btn_feed(&bt, vel0, sizeof vel0, 9000), 0);            /* releases and other channels don't count */
     sb_led lv; sb_led_init(&lv);
     const uint8_t cc[] = { 0xB0, 93, 3, 0xB0, 93, 3, 0xB0, 91, 1, 0xB1, 92, 5, 0xC0, 7 };
@@ -182,6 +182,24 @@ int main(void) {
     CHECK_EQ(sb_led_feed(&lv, cc, 3), 0);
     const uint8_t off[] = { 93, 0 };                                    /* running status */
     CHECK_EQ(sb_led_feed(&lv, off, sizeof off), 1); CHECK_EQ(lv.val[93], 0); CHECK_EQ(lv.changed_btn, 93);
+    {
+      sb_btn bh; sb_btn_init(&bh, 49, 80, 350);                        /* Shift + Overdub */
+      const uint8_t od[] = { 0x90, 80, 0x7f, 0x90, 80, 0 }, sh_on[] = { 0x90, 49, 0x7f }, sh_off[] = { 0x90, 49, 0 }, sh_off80[] = { 0x80, 49, 0x40 };
+      CHECK_EQ(sb_btn_feed(&bh, od, sizeof od, 100), 0);                /* Overdub alone does nothing, however often */
+      CHECK_EQ(sb_btn_feed(&bh, od, sizeof od, 200), 0);
+      CHECK_EQ(sb_btn_feed(&bh, sh_on, sizeof sh_on, 300), 0);
+      CHECK_EQ(sb_btn_feed(&bh, od, sizeof od, 400), 1);                /* Shift held: one press is enough */
+      CHECK_EQ(sb_btn_feed(&bh, od, sizeof od, 5000), 1);               /* and no time limit, while Shift stays down */
+      CHECK_EQ(sb_btn_feed(&bh, sh_off, sizeof sh_off, 5100), 0);
+      CHECK_EQ(sb_btn_feed(&bh, od, sizeof od, 5200), 0);               /* Shift released */
+      sb_btn_feed(&bh, sh_on, sizeof sh_on, 6000); sb_btn_feed(&bh, sh_off80, sizeof sh_off80, 6100);
+      CHECK_EQ(sb_btn_feed(&bh, od, sizeof od, 6200), 0);               /* a note-off releases it too */
+      const uint8_t both[] = { 0x90, 49, 0x7f, 0x90, 80, 0x7f, 0x90, 80, 0, 0x90, 49, 0 };
+      CHECK_EQ(sb_btn_feed(&bh, both, sizeof both, 7000), 1);           /* all in one read */
+      unsigned n1 = 0; CHECK_EQ(sb_parse_note("shift", &n1), 0); CHECK_EQ(n1, 49);
+      CHECK_EQ(sb_parse_note("overdub", &n1), 0); CHECK_EQ(n1, 80); CHECK_EQ(sb_parse_note("recarm", &n1), 0); CHECK_EQ(n1, 93);
+      CHECK_EQ(sb_parse_note("93", &n1), 0); CHECK_EQ(n1, 93); CHECK(sb_parse_note("nope", &n1) != 0); CHECK(sb_parse_note("128", &n1) != 0);
+    }
     sb_cfg c2; sb_cfg_defaults(&c2); CHECK_EQ(c2.button_mode, SB_BTN_AUTO); CHECK_EQ(c2.led, -1); CHECK_EQ(c2.led_button, -1);
     {
       char cf[600]; snprintf(cf, sizeof cf, "%s/b.conf", dir);
@@ -190,6 +208,12 @@ int main(void) {
       write_file(cf, "button=0\n"); CHECK_EQ(sb_cfg_load(&c2, cf, err, sizeof err), 0); CHECK_EQ(c2.button_mode, SB_BTN_NUM); CHECK_EQ(c2.button, 0);
       write_file(cf, "button=auto\nled=1\n"); CHECK_EQ(sb_cfg_load(&c2, cf, err, sizeof err), 0); CHECK_EQ(c2.button_mode, SB_BTN_AUTO); CHECK_EQ(c2.led, 1);
       write_file(cf, "button=bogus\nled=2\n"); CHECK_EQ(sb_cfg_load(&c2, cf, err, sizeof err), 2);
+      write_file(cf, "button=shift+overdub\nled_on=auto\n"); CHECK_EQ(sb_cfg_load(&c2, cf, err, sizeof err), 0); CHECK_EQ(c2.hold, 49); CHECK_EQ(c2.button, 80); CHECK_EQ(c2.button_mode, SB_BTN_NUM); CHECK_EQ(c2.led_on, -1);
+      write_file(cf, "button=49+81\nled_on=2\n"); CHECK_EQ(sb_cfg_load(&c2, cf, err, sizeof err), 0); CHECK_EQ(c2.hold, 49); CHECK_EQ(c2.button, 81); CHECK_EQ(c2.led_on, 2);
+      write_file(cf, "button=93\n"); CHECK_EQ(sb_cfg_load(&c2, cf, err, sizeof err), 0); CHECK_EQ(c2.hold, 0);      /* a plain number clears an earlier hold */
+      write_file(cf, "button=+80\n"); CHECK_EQ(sb_cfg_load(&c2, cf, err, sizeof err), 1);
+      write_file(cf, "button=shift+\n"); CHECK_EQ(sb_cfg_load(&c2, cf, err, sizeof err), 1);
+      write_file(cf, "button=0+80\n"); CHECK_EQ(sb_cfg_load(&c2, cf, err, sizeof err), 1);
       sb_learn lr; sb_learn_init(&lr, 350);
       const uint8_t a[] = { 0x90, 60, 0x7f, 0x90, 60, 0 }, b[] = { 0x90, 61, 0x7f, 0x90, 61, 0 }, pad[] = { 0x99, 40, 0x7f, 0x99, 40, 0x7f };
       CHECK_EQ(sb_learn_feed(&lr, a, sizeof a, 1000), -1);

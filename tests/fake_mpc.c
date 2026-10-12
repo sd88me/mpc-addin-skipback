@@ -149,16 +149,40 @@ int main(int argc, char **argv) {
     snd_rawmidi_close(in); snd_rawmidi_close(out); snd_rawmidi_close(oin); snd_rawmidi_close(oout);
   }
   char mflag[400]; snprintf(mflag, sizeof mflag, "%s/mpc-on", dir);
-  if (access(mflag, F_OK) == 0) {                 /* an MPC (not a Force): Overdub (80) by default, and no LED bytes sent */
+  if (access(mflag, F_OK) == 0) {                 /* an MPC (not a Force): Shift + Overdub by default; the Overdub LED blinks with value 2 */
     void *in, *out;
     fake_rm_private = 2; CHECK_EQ(snd_rawmidi_open(&in, &out, "hw:1,0", 0), 0);
-    unsigned char got[32]; const unsigned char rec[] = { 0x90, 93, 0x7f, 0x90, 93, 0, 0x90, 93, 0x7f, 0x90, 93, 0 };
-    const unsigned char od[] = { 0x90, 80, 0x7f, 0x90, 80, 0, 0x90, 80, 0x7f, 0x90, 80, 0 };
+    unsigned char got[32];
+    const unsigned char led80[] = { 0xB0, 80, 1 };                       /* MPC lights Overdub dim */
+    CHECK_EQ(snd_rawmidi_write(out, led80, 3), 3);
+    const unsigned char rec[] = { 0x90, 93, 0x7f, 0x90, 93, 0, 0x90, 93, 0x7f, 0x90, 93, 0 };
+    const unsigned char od2[] = { 0x90, 80, 0x7f, 0x90, 80, 0, 0x90, 80, 0x7f, 0x90, 80, 0 };
+    const unsigned char sh_od[] = { 0x90, 49, 0x7f, 0x90, 80, 0x7f, 0x90, 80, 0, 0x90, 49, 0 };
     unlink(done); fake_rm_feed(rec, sizeof rec); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), (ssize_t)sizeof rec);
-    usleep(400000); CHECK(access(done, F_OK) != 0);                    /* 93 is not its button */
-    fake_rm_feed(od, sizeof od); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), (ssize_t)sizeof od);
+    fake_rm_feed(od2, sizeof od2); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), (ssize_t)sizeof od2);
+    usleep(400000); CHECK(access(done, F_OK) != 0);                    /* neither 93 nor Overdub twice without Shift saves */
+    fake_rm_feed(sh_od, sizeof sh_od); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), (ssize_t)sizeof sh_od);
+    CHECK(!memcmp(got, sh_od, sizeof sh_od));                          /* passed through unchanged */
     CHECK_EQ(wait_done(body, sizeof body), 0); CHECK(!strncmp(body, "ok ", 3));
-    usleep(600000); CHECK_EQ(fake_rm_out_n, 0);                         /* led=auto: nothing written to a non-Force controller */
+    for (int i = 0; i < 150 && fake_rm_out_n < 3 + 2 * 21; i++) usleep(20000);
+    CHECK_EQ(fake_rm_out_n, 3 + 2 * 21);                               /* fast blinks and slow blinks, each ending on the dim value MPC had set */
+    if (fake_rm_out_n == 45) {
+      for (int round = 0; round < 2; round++) {
+        const unsigned char *o = fake_rm_out + 3 + round * 21;
+        for (int k = 0; k < 3; k++) { CHECK(!memcmp(o + k * 6, "\xB0\x50\x02", 3)); CHECK(!memcmp(o + 3 + k * 6, "\xB0\x50\x00", 3)); }
+        CHECK(!memcmp(o + 18, "\xB0\x50\x01", 3));
+      }
+    }
+    snd_rawmidi_close(in); snd_rawmidi_close(out);
+  }
+  char uflag[400]; snprintf(uflag, sizeof uflag, "%s/unk-on", dir);
+  if (access(uflag, F_OK) == 0) {                 /* a controller that is neither Force nor MPC: same button, but no LED bytes */
+    void *in, *out;
+    fake_rm_private = 3; CHECK_EQ(snd_rawmidi_open(&in, &out, "hw:1,0", 0), 0);
+    unsigned char got[32]; const unsigned char sh_od[] = { 0x90, 49, 0x7f, 0x90, 80, 0x7f, 0x90, 80, 0, 0x90, 49, 0 };
+    unlink(done); fake_rm_feed(sh_od, sizeof sh_od); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), (ssize_t)sizeof sh_od);
+    CHECK_EQ(wait_done(body, sizeof body), 0); CHECK(!strncmp(body, "ok ", 3));
+    usleep(700000); CHECK_EQ(fake_rm_out_n, 0);
     snd_rawmidi_close(in); snd_rawmidi_close(out);
   }
   char lflag[400]; snprintf(lflag, sizeof lflag, "%s/learn-on", dir);
