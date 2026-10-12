@@ -61,7 +61,7 @@ catalog. How the installer works, and what to do if an addin stops MPC from star
   (it arms), MPC sees both presses, and the second one starts the save.
 - **On the other MPC models (One, Live, X, Key and the rest of that family): hold Shift and press Overdub.** This is the
   default there, taken from TheKikGen's MPC button table (not yet checked on a device: see
-  [Other models](#other-models-and-learn-mode)). MPC also sees Shift + Overdub as it normally would.
+  [Other models](#other-models-and-learn-mode)). Shift + Overdub has no function of its own in MPC (checked in the manuals), so nothing else happens when you use it.
 - Either can be changed: `button=` takes a note number, a name, a `shift+overdub`-style combination, or `learn`
   (see [Settings](#settings)). Pick a button or combination where an extra press is harmless.
 - **Or create the trigger file.** Anything that can create `/tmp/mpc-addin-skipback.trigger` starts a save:
@@ -214,8 +214,8 @@ Force (`src/tkgl_midimapper.h` for the buttons, `tkgl_midimapper.c` and `tmm-plu
 - **Verified on a device:** the Force (Rec Arm 93, the control-change LEDs, values 1 and 3). The standalone MPCs follow the
   same code path in TheKikGen's mapper and are expected to behave the same, but nothing here has been run on one: that is the
   open question this addin asks testers to settle.
-- **Not found:** an Akai MIDI implementation chart for the standalone MPCs, and documentation of what Shift + Overdub does on
-  them (if it does something you do not want, pick another button with `button=`).
+- **Shift + Overdub** does nothing natively on the MPC models, according to their manuals, which is why it is the default there.
+- **Not found:** an Akai MIDI implementation chart for the standalone MPCs.
 
 ## Troubleshooting
 
@@ -248,7 +248,7 @@ Known limits:
 
 - **Memory.** The rolling buffer is sized for the largest window at the highest sample rate and grows to about 48 MB of RAM
   over the first couple of minutes whatever `window_sec` is.
-- **MPC sees the presses too.** The addin only looks at the button presses; MPC still gets them. A toggle button pressed twice (Rec Arm) ends where it started, and Shift + Overdub does whatever MPC does with it.
+- **MPC sees the presses too.** The addin only looks at the button presses; MPC still gets them. A toggle button pressed twice (Rec Arm) ends where it started, and Shift + Overdub has no function of its own for MPC to carry out.
 - **Slow cards.** A save takes 2 to 5 seconds on the Force's SD card; the LED waits for it. The audio is not affected.
 - **Failed saves** show quick flashes only; the reason is in `done` and the log.
 - **Project name and tempo** are not in the file name (the older Force-only version, in
