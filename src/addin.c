@@ -115,23 +115,40 @@ static void logf_(const char *fmt, ...) {
 
 /* ---- setup ----------------------------------------------------------------------------------- */
 
+/* The next definition of a symbol after this library, by libc's own dlsym called from here. An addin that exports its
+ * dlsym (the commander addin before 1.0.1) answers RTLD_NEXT relative to itself, which skips every shim between this
+ * library and it; dlvsym is a different symbol, so libc's dlsym is reachable and takes this library as the caller. */
+static void *next_sym(const char *name) {
+  static void *(*libc_dlsym)(void *, const char *);
+  if (!libc_dlsym) {
+    /* the versions of libc's dlsym: 2.34 moved it from libdl into libc */
+    static const char *const vers[] = {"2.34", "2.4", "2.17", "2.2.5", "2.0"};
+    for (size_t i = 0; i < sizeof vers / sizeof *vers && !libc_dlsym; i++) {
+      char v[16] = "GLIBC_";
+      strcat(v, vers[i]);
+      libc_dlsym = (void *(*)(void *, const char *))dlvsym(RTLD_DEFAULT, "dlsym", v);
+    }
+  }
+  return (libc_dlsym ? libc_dlsym : dlsym)(RTLD_NEXT, name);
+}
+
 static void resolve_reals(void) {
-  *(void **)&real_open = dlsym(RTLD_NEXT, "snd_pcm_open");
-  *(void **)&real_close = dlsym(RTLD_NEXT, "snd_pcm_close");
-  *(void **)&real_hw_params = dlsym(RTLD_NEXT, "snd_pcm_hw_params");
-  *(void **)&real_writei = dlsym(RTLD_NEXT, "snd_pcm_writei");
-  *(void **)&real_writen = dlsym(RTLD_NEXT, "snd_pcm_writen");
-  *(void **)&real_rm_open = dlsym(RTLD_NEXT, "snd_rawmidi_open");
-  *(void **)&real_rm_close = dlsym(RTLD_NEXT, "snd_rawmidi_close");
-  *(void **)&real_rm_read = dlsym(RTLD_NEXT, "snd_rawmidi_read");
-  *(void **)&real_rm_write = dlsym(RTLD_NEXT, "snd_rawmidi_write");
-  *(void **)&a_info_sizeof = dlsym(RTLD_NEXT, "snd_pcm_info_sizeof");
-  *(void **)&a_info = dlsym(RTLD_NEXT, "snd_pcm_info");
-  *(void **)&a_info_get_card = dlsym(RTLD_NEXT, "snd_pcm_info_get_card");
-  *(void **)&a_get_format = dlsym(RTLD_NEXT, "snd_pcm_hw_params_get_format");
-  *(void **)&a_get_channels = dlsym(RTLD_NEXT, "snd_pcm_hw_params_get_channels");
-  *(void **)&a_get_rate = dlsym(RTLD_NEXT, "snd_pcm_hw_params_get_rate");
-  *(void **)&a_get_access = dlsym(RTLD_NEXT, "snd_pcm_hw_params_get_access");
+  *(void **)&real_open = next_sym("snd_pcm_open");
+  *(void **)&real_close = next_sym("snd_pcm_close");
+  *(void **)&real_hw_params = next_sym("snd_pcm_hw_params");
+  *(void **)&real_writei = next_sym("snd_pcm_writei");
+  *(void **)&real_writen = next_sym("snd_pcm_writen");
+  *(void **)&real_rm_open = next_sym("snd_rawmidi_open");
+  *(void **)&real_rm_close = next_sym("snd_rawmidi_close");
+  *(void **)&real_rm_read = next_sym("snd_rawmidi_read");
+  *(void **)&real_rm_write = next_sym("snd_rawmidi_write");
+  *(void **)&a_info_sizeof = next_sym("snd_pcm_info_sizeof");
+  *(void **)&a_info = next_sym("snd_pcm_info");
+  *(void **)&a_info_get_card = next_sym("snd_pcm_info_get_card");
+  *(void **)&a_get_format = next_sym("snd_pcm_hw_params_get_format");
+  *(void **)&a_get_channels = next_sym("snd_pcm_hw_params_get_channels");
+  *(void **)&a_get_rate = next_sym("snd_pcm_hw_params_get_rate");
+  *(void **)&a_get_access = next_sym("snd_pcm_hw_params_get_access");
 }
 
 static int exe_is_mpc(void) {
