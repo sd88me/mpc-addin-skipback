@@ -275,12 +275,17 @@ Known limits:
 
 ```sh
 tools/test_host.sh       # x86, ASan + UBSan: unit tests, and the addin in front of a fake libasound / rawmidi
-tools/build_armhf.sh     # Docker arm/v7: glibc <= 2.31, no libasound dependency, only the expected exports
+tools/build_armhf.sh     # Docker arm/v7: glibc <= 2.31, no libasound dependency, only the expected exports (Gen1)
+tools/build_aarch64.sh   # Docker arm64: glibc <= 2.39, same checks (Gen2 -- Live III, One G2, Key(s) G2)
 tools/device_test.sh     # on the device: triggers a save the way a script would and prints the result
 ```
 
-Package with `tools/release_addin.py` from [mpc-vst-plugins](https://github.com/sd88me/mpc-vst-plugins), then
-`catalog_check.py --catalog`. The settings file, installer and release layout are described in that repo's `docs/ADDINS.md`.
+Package each build with `tools/release_addin.py` from [mpc-vst-plugins](https://github.com/sd88me/mpc-vst-plugins)
+(`--dir build/package` for Gen1, `--dir build/package-aarch64` for Gen2 -- same `--version`/`--repo`/`--license`,
+each produces its own `-mpc-armv7.zip`/`-mpc-aarch64.zip`, both go on the same release), then `catalog_check.py
+--catalog` on each. The settings file, installer and release layout are described in that repo's `docs/ADDINS.md`.
+The Gen2 build is offline-tested only (host tests, the aarch64/Docker build and its checks, `catalog_check.py`); it
+has not run on a real Gen2 device.
 
 ## Credits
 
