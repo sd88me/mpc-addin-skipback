@@ -5,9 +5,9 @@
 **Record the past.** Skipback listens to your MPC's main output all the time. When you double-press a button, it
 saves the **last 30 to 60 seconds** as a WAV file, so the idea you had a moment ago is already on the card.
 
-An addin for Akai MPC OS standalone devices (MPC Live, One, X, Key and Force). It runs inside MPC, with no extra
-program to start, and uses the controller's own buttons and LEDs. Tested on a Force; see
-[Status](#status).
+An addin for Akai MPC OS standalone devices (MPC Live, One, X, Key and Force, Gen1 or Gen2). It runs inside MPC,
+with no extra program to start, and uses the controller's own buttons and LEDs. Tested on a Force and a Gen2 Live
+III; see [Status](#status).
 
 ## Features
 
@@ -27,10 +27,11 @@ program to start, and uses the controller's own buttons and LEDs. Tested on a Fo
 
 ## Requirements
 
-- An Akai MPC or Force running MPC OS (32-bit ARM; the installer checks).
+- An Akai MPC or Force running MPC OS (Gen1, 32-bit ARM, or Gen2, aarch64; the installer checks each build against
+  the device).
 - SSH access to the device as root, to install.
-- The Force is the only model it has been tested on. Other models use a default button that has not been checked
-  yet: see [Other models](#other-models-and-learn-mode).
+- The Force and a Gen2 Live III are the only models it has been tested on (`tested.json`). Other models use a
+  default button that has not been checked yet: see [Other models](#other-models-and-learn-mode).
 
 ## Install
 
@@ -238,11 +239,13 @@ Force (`src/tkgl_midimapper.h` for the buttons, `tkgl_midimapper.c` and `tmm-plu
 **Experimental.** The releases are marked as pre-releases while the buttons for other models are worked out.
 
 Works on an Akai Force (MPC 3.9.1, 2026-10-10): the double press, the saves (to the SD card, then to a USB drive), the
-LED flashes and the settings were all used on a real device. The other models are untested: the default button there
-(Shift + Overdub) and the LED values come from documentation of the MPC button and LED numbers rather than a device (see
-the [reference](#button-and-led-reference)), and `button=learn` is there to find what works;
-see [Other models](#other-models-and-learn-mode). The offline tests (x86, ASan/UBSan, against a fake audio library and a fake MIDI
-port) cover everything but the device itself.
+LED flashes and the settings were all used on a real device. Also works on a Gen2 Live III (MPC OS 3.9.1,
+2026-10-23): the aarch64 build loads and runs alongside two other addins with no conflicts (not yet exercised there
+beyond loading -- the button/LED/save path on that model wasn't separately re-checked). The other models (Live,
+One, X, Key) are untested: the default button there (Shift + Overdub) and the LED values come from documentation of
+the MPC button and LED numbers rather than a device (see the [reference](#button-and-led-reference)), and
+`button=learn` is there to find what works; see [Other models](#other-models-and-learn-mode). The offline tests
+(x86, ASan/UBSan, against a fake audio library and a fake MIDI port) cover everything but the device itself.
 
 Known limits:
 
@@ -275,12 +278,20 @@ Known limits:
 
 ```sh
 tools/test_host.sh       # x86, ASan + UBSan: unit tests, and the addin in front of a fake libasound / rawmidi
-tools/build_armhf.sh     # Docker arm/v7: glibc <= 2.31, no libasound dependency, only the expected exports
+tools/build_armhf.sh     # Docker arm/v7: glibc <= 2.31, no libasound dependency, only the expected exports (Gen1)
+tools/build_aarch64.sh   # Docker arm64: glibc <= 2.39, same checks (Gen2 -- Live III, One G2, Key(s) G2)
 tools/device_test.sh     # on the device: triggers a save the way a script would and prints the result
 ```
 
-Package with `tools/release_addin.py` from [mpc-vst-plugins](https://github.com/sd88me/mpc-vst-plugins), then
-`catalog_check.py --catalog`. The settings file, installer and release layout are described in that repo's `docs/ADDINS.md`.
+Package each build with `tools/release_addin.py` from [mpc-vst-plugins](https://github.com/sd88me/mpc-vst-plugins)
+(`--dir build/package` for Gen1, `--dir build/package-aarch64` for Gen2 -- same `--version`/`--repo`/`--license`,
+each produces its own `-mpc-armv7.zip`/`-mpc-aarch64.zip`, both go on the same release), then `catalog_check.py
+--catalog` on each. The settings file, installer and release layout are described in that repo's `docs/ADDINS.md`.
+Device-confirmed on a Gen2 Live III, MPC OS 3.9.1 (2026-10-23; `tested.json`), alongside mpc-addin-remote and
+mpc-addin-commander with no conflicts. That device has no persistent `/etc` (a verity rootfs): the LD_PRELOAD entry
+lives on `/run` and needs reapplying after a reboot -- `sh /data/mpc-addins/skipback/install.sh -y -n -t
+/data/mpc-addins/skipback` redoes it without the release zip (mpc-vst-plugins `docs/ADDINS.md`, "A device with no
+persistent /etc"); the USB stick does this for every installed addin automatically.
 
 ## Credits
 
