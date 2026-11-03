@@ -239,7 +239,7 @@ Force (`src/tkgl_midimapper.h` for the buttons, `tkgl_midimapper.c` and `tmm-plu
 **Experimental.** The releases are marked as pre-releases while the buttons for other models are worked out.
 
 Works on an Akai Force (MPC 3.9.1, 2026-10-10): the double press, the saves (to the SD card, then to a USB drive), the
-LED flashes and the settings were all used on a real device. Also works on a Gen2 Live III (MPC OS 3.9.1, 2026-11-03): Shift + Overdub saves, the saved WAV is the full window, and the
+LED flashes and the settings were all used on a real device. Also works on a Gen2 Live III (MPC OS 3.10, 2026-11-03; first loaded on 3.9.1, 2026-10-23): Shift + Overdub saves, the saved WAV is the full window, and the
 Overdub LED flashes. That device has no `platform-sound` link, so the audio card is found from `/proc/asound/cards`,
 and Overdub's LED is controller 84 rather than its button number 80 (both fixed in 0.6.2). The other models (Live,
 One, X, Key) are untested: the default button there (Shift + Overdub) and the LED values come from documentation of
@@ -287,7 +287,7 @@ Package each build with `tools/release_addin.py` from [mpc-vst-plugins](https://
 (`--dir build/package` for Gen1, `--dir build/package-aarch64` for Gen2 -- same `--version`/`--repo`/`--license`,
 each produces its own `-mpc-armv7.zip`/`-mpc-aarch64.zip`, both go on the same release), then `catalog_check.py
 --catalog` on each. The settings file, installer and release layout are described in that repo's `docs/ADDINS.md`.
-Device-confirmed on a Gen2 Live III, MPC OS 3.9.1 (2026-10-23, saves and LED 2026-11-03; `tested.json`), alongside mpc-addin-remote and
+Device-confirmed on a Gen2 Live III, MPC OS 3.9.1 and 3.10 (2026-10-23 on 3.9.1; saves and LED 2026-11-03 on 3.10; `tested.json`), alongside mpc-addin-remote and
 mpc-addin-commander with no conflicts. That device has no persistent `/etc` (a verity rootfs): the LD_PRELOAD entry
 lives on `/run` and needs reapplying after a reboot -- `sh /data/mpc-addins/skipback/install.sh -y -n -t
 /data/mpc-addins/skipback` redoes it without the release zip (mpc-vst-plugins `docs/ADDINS.md`, "A device with no

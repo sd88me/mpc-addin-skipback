@@ -1,5 +1,5 @@
 [
   {"version": "0.6.0", "device": "Akai Force", "firmware": "3.9.1", "date": "2026-10-15"},
   {"version": "0.6.1", "device": "MPC Live III (Gen2)", "firmware": "3.9.1", "date": "2026-10-23"},
-  {"version": "0.6.2", "device": "MPC Live III (Gen2)", "firmware": "3.9.1", "date": "2026-11-03"}
+  {"version": "0.6.2", "device": "MPC Live III (Gen2)", "firmware": "3.10", "date": "2026-11-03"}
 ]
