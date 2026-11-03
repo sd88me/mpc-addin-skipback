@@ -12,6 +12,7 @@ enum { SB_BTN_NUM = 0, SB_BTN_AUTO = 1, SB_BTN_LEARN = 2 };
 #define SB_FORCE_BUTTON 93     /* Rec Arm on a Force */
 #define SB_MPC_BUTTON   80     /* Overdub on the MPC family, with Shift (49) held */
 #define SB_MPC_HOLD     49
+#define SB_MPC_LED      84     /* Overdub's LED on the MPC family: not its button number (seen on a Live III) */
 #define SB_SLACK_SEC      2u    /* buffer kept beyond the window, so a snapshot copy can never be overrun by the audio thread */
 
 typedef struct {

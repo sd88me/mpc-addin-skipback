@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
@@ -184,10 +185,25 @@ static int resolve_card(void) {
   if (G.cfg.tap_card >= 0) return G.cfg.tap_card;
   char t[64];
   ssize_t n = readlink("/dev/snd/by-path/platform-sound", t, sizeof t - 1);
-  if (n <= 0) return -1;
-  t[n] = 0;
-  const char *s = strstr(t, "controlC");
-  return s ? atoi(s + 8) : -1;
+  if (n > 0) {
+    t[n] = 0;
+    const char *s = strstr(t, "controlC");
+    if (s) return atoi(s + 8);
+  }
+  /* No platform-sound link (a Gen2 Live III has its codec on USB): take the USB-Audio card the device names as its own. */
+  FILE *f = fopen("/proc/asound/cards", "re");
+  if (!f) return -1;
+  char line[256];
+  int card = -1;
+  while (card < 0 && fgets(line, sizeof line, f)) {
+    int idx;
+    const char *p = strstr(line, "]: USB-Audio");
+    if (!p || sscanf(line, " %d [", &idx) != 1) continue;
+    for (const char *k = p; *k; k++)
+      if (!strncasecmp(k, "MPC", 3) || !strncasecmp(k, "Force", 5) || !strncasecmp(k, "APC", 3)) { card = idx; break; }
+  }
+  fclose(f);
+  return card;
 }
 
 __attribute__((constructor)) static void sb_ctor(void) {
@@ -311,7 +327,7 @@ static void led_set(snd_rawmidi_t *out, unsigned button, unsigned value) {
 /* Blink the LED n times, then put back the value MPC last gave it (looked up again at the end: MPC may have changed it). */
 static void led_blink(unsigned n, unsigned ms) {
   snd_rawmidi_t *out = atomic_load(&G.rm_out);
-  unsigned btn = G.cfg.led_button >= 0 ? (unsigned)G.cfg.led_button : G.cfg.button;
+  unsigned btn = G.cfg.led_button >= 0 ? (unsigned)G.cfg.led_button : (!G.is_force && G.cfg.button == SB_MPC_BUTTON) ? SB_MPC_LED : G.cfg.button;
   if (!led_enabled() || !n || !out || btn > 127) return;
   for (unsigned i = 0; i < n; i++) {
     led_set(out, btn, led_on_value(btn));
