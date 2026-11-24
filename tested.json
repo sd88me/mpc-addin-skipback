@@ -1,5 +1,7 @@
 [
   {"version": "0.6.0", "device": "Akai Force", "firmware": "3.9.1", "date": "2026-10-15"},
   {"version": "0.6.1", "device": "MPC Live III (Gen2)", "firmware": "3.9.1", "date": "2026-10-23"},
-  {"version": "0.6.2", "device": "MPC Live III (Gen2)", "firmware": "3.10", "date": "2026-11-03"}
+  {"version": "0.6.2", "device": "MPC Live III (Gen2)", "firmware": "3.10", "date": "2026-11-03"},
+  {"version": "0.6.4", "device": "Akai MPC Live III (Gen2)", "firmware": "3.10", "date": "2026-11-24",
+    "note": "Release zip installed on the unit; Shift + Overdub saves the last 30 s and the LED flashes."}
 ]
