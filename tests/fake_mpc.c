@@ -169,8 +169,8 @@ int main(int argc, char **argv) {
     if (fake_rm_out_n == 48) {
       for (int round = 0; round < 2; round++) {
         const unsigned char *o = fake_rm_out + 6 + round * 21;
-        for (int k = 0; k < 3; k++) { CHECK(!memcmp(o + k * 6, "\xB0\x50\x03", 3)); CHECK(!memcmp(o + 3 + k * 6, "\xB0\x50\x00", 3)); }   /* lit with what MPC used */
-        CHECK(!memcmp(o + 18, "\xB0\x50\x01", 3));
+        for (int k = 0; k < 3; k++) { CHECK(!memcmp(o + k * 6, "\xB0\x54\x02", 3)); CHECK(!memcmp(o + 3 + k * 6, "\xB0\x54\x00", 3)); }   /* lit with what MPC used */
+        CHECK(!memcmp(o + 18, "\xB0\x54\x00", 3));
       }
     }
     snd_rawmidi_close(in); snd_rawmidi_close(out);
@@ -183,7 +183,7 @@ int main(int argc, char **argv) {
     unlink(done); fake_rm_feed(sh_od, sizeof sh_od); CHECK_EQ(snd_rawmidi_read(in, got, sizeof got), (ssize_t)sizeof sh_od);
     CHECK_EQ(wait_done(body, sizeof body), 0); CHECK(!strncmp(body, "ok ", 3));
     for (int i = 0; i < 150 && fake_rm_out_n < 2 * 21; i++) usleep(20000);
-    CHECK_EQ(fake_rm_out_n, 2 * 21); if (fake_rm_out_n == 42) CHECK(!memcmp(fake_rm_out, "\xB0\x50\x02", 3));
+    CHECK_EQ(fake_rm_out_n, 2 * 21); if (fake_rm_out_n == 42) CHECK(!memcmp(fake_rm_out, "\xB0\x54\x02", 3));
     snd_rawmidi_close(in); snd_rawmidi_close(out);
   }
   char uflag[400]; snprintf(uflag, sizeof uflag, "%s/unk-on", dir);
