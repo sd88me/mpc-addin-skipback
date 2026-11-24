@@ -1,0 +1,32 @@
+# Builds MPC Skipback for Gen1 (armv7) and Gen2 (aarch64) under QEMU, packages the zips with mpc-vst-plugins' release_addin.py and
+# attaches them to a DRAFT release. A person installs that exact zip on a device and publishes the draft (docs/ADDINS.md "Releasing").
+# Move the pin (both places) to the current main of open-mpc/mpc-vst-plugins before each release.
+name: Release (draft)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version, e.g. 1.0.1
+        required: true
+      dry_run:
+        description: Zip as a run artifact only, no draft release
+        type: boolean
+        default: true
+
+jobs:
+  addin:
+    uses: open-mpc/mpc-vst-plugins/.github/workflows/addin-release.yml@1777e405a4c15c380f7a1b1adf673dd73c1a0585
+    permissions: { contents: write }
+    with:
+      tag: skipback-v${{ inputs.version }}
+      version: ${{ inputs.version }}
+      tools_ref: 1777e405a4c15c380f7a1b1adf673dd73c1a0585
+      package_dir: build/package
+      build: tools/build_armhf.sh
+      package_dir_aarch64: build/package-aarch64
+      build_aarch64: tools/build_aarch64.sh
+      host_test: tools/test_host.sh
+      about: Records the main output all the time and saves the last 30 to 60 seconds as a WAV when you double-press a hardware button.
+      license: GPL-3.0-or-later
+      dry_run: ${{ inputs.dry_run }}
